@@ -183,6 +183,52 @@ def test_hypothesis_h1(model: TernaryRecursiveDiffusionLM, cfg: HybridConfig):
             print(f"  R={r_test} | {icono} | Salida: {repr(salida.strip())} | Evals: {evals}")
 
 
+def run_comprehensive_h1_evaluation(model: TernaryRecursiveDiffusionLM, cfg: HybridConfig, num_samples: int = 30):
+    """
+    Evaluación sistemática de la Hipótesis H1 sobre una cohorte de tuplas OOD reservadas.
+    Mide tasa de validez sintáctica, latencia promedio y evaluaciones de bloque para R in {1, 2, 4, 8}.
+    """
+    import time
+    test_ds = ProceduralCompositionalDataset(cfg, split="test", num_samples=num_samples)
+    print("\n" + "=" * 75)
+    print(f"  EVALUACIÓN SISTEMÁTICA H1 SOBRE {num_samples} CASOS HELD-OUT (OOD) ")
+    print("=" * 75)
+
+    cases = []
+    for x_0, can_mask in test_ds.samples[:num_samples]:
+        seq = x_0.tolist()
+        mask_indices = can_mask.nonzero()
+        prompt_end = mask_indices[0].item() if len(mask_indices) > 0 else 49
+        p_bytes = [b for b in seq[1:prompt_end] if b < 256]
+        prompt_text = bytes(p_bytes).decode("utf-8", errors="replace")
+        target_bytes = [b for b in seq[prompt_end:] if b not in (cfg.eos_token_id, cfg.pad_token_id) and b < 256]
+        target_text = bytes(target_bytes).decode("utf-8", errors="replace")
+        cases.append((prompt_text, target_text))
+
+    print(f"{'R':<4} | {'Validez Formato':<16} | {'Latencia Media':<16} | {'Evals Bloque'}")
+    print("-" * 55)
+
+    for r_test in (1, 2, 4, 8):
+        valid_format = 0
+        total_lat = 0.0
+        total_evals = 0
+
+        for prompt, target in cases:
+            t0 = time.perf_counter()
+            salida, _, evals = generate_block_causal_with_kv_cache(model, prompt, cfg, num_recursions=r_test)
+            lat = (time.perf_counter() - t0) * 1000.0
+
+            total_lat += lat
+            total_evals += evals
+            if "watt:" in salida and "ms:" in salida:
+                valid_format += 1
+
+        pct_valid = (valid_format / len(cases)) * 100.0
+        avg_lat = total_lat / len(cases)
+        avg_evals = total_evals / len(cases)
+        print(f"R={r_test:<2} | {pct_valid:>6.1f}%          | {avg_lat:>6.1f} ms        | {avg_evals:>5.1f}")
+
+
 if __name__ == "__main__":
     cfg = HybridConfig()
     model = TernaryRecursiveDiffusionLM(cfg)
@@ -196,3 +242,4 @@ if __name__ == "__main__":
         print("[Modo FP32/QAT] Evaluando sin archivo binario BITCOS.")
 
     test_hypothesis_h1(model, cfg)
+    run_comprehensive_h1_evaluation(model, cfg, num_samples=25)

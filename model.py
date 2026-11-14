@@ -59,16 +59,31 @@ class BitLinear(nn.Module):
         acc = F.linear(q_x, pos_mask) - F.linear(q_x, neg_mask)
         return acc * ((scale_x / q_max) * s_w)
 
+    def forward_kernel_add_sub(self, x_norm: torch.Tensor, scale_x: torch.Tensor) -> torch.Tensor:
+        """Suma/resta pura ejecutada por kernel C con AVX2/OpenMP sin multiplicaciones."""
+        from ternary_cpu_kernel import ternary_addsub_matmul
+        q_max = 127.0
+        q_x_i8 = torch.clamp(torch.round(x_norm * (q_max / scale_x)), -q_max, q_max).to(torch.int8)
+        codes = self.int8_codes if self.use_loaded_bitcos else self.quantize_weights()[1].to(torch.int8)
+        s_w = self.packed_scale if self.use_loaded_bitcos else self.quantize_weights()[2]
+        acc_int32 = ternary_addsub_matmul(q_x_i8, codes)
+        rescale = (scale_x / q_max) * s_w
+        return acc_int32.to(x_norm.dtype) * rescale
+
     def forward(
         self,
         x: torch.Tensor,
         record_telemetry: bool = False,
         integer_mode: bool = False,
         add_sub_only: bool = False,
+        use_kernel: bool = False,
     ) -> torch.Tensor:
         x_norm = self.sub_ln(x)
         q_max = 127.0
         scale_x = x_norm.abs().amax(dim=-1, keepdim=True).clamp(min=self.eps)
+
+        if use_kernel and not self.training:
+            return self.forward_kernel_add_sub(x_norm, scale_x)
 
         if add_sub_only and not self.training:
             return self.forward_add_sub_only(x_norm, scale_x)
@@ -521,7 +536,10 @@ class TernaryRecursiveDiffusionLM(nn.Module):
         active_ratios: List[float] = []
 
         for r in range(R):
-            cache_r = kv_caches_per_r[r] if kv_caches_per_r is not None else None
+            if kv_caches_per_r is not None and len(kv_caches_per_r) > 0:
+                cache_r = kv_caches_per_r[r] if r < len(kv_caches_per_r) else kv_caches_per_r[-1]
+            else:
+                cache_r = None
             use_nograd = self.training and (r < self.cfg.nograd_recursions)
 
             if use_nograd:
@@ -570,6 +588,10 @@ class TernaryRecursiveDiffusionLM(nn.Module):
         if record_telemetry:
             self.last_recursion_deltas = deltas
             self.last_active_token_ratios = active_ratios
+
+        if len(new_kv_caches) < R and len(new_kv_caches) > 0:
+            while len(new_kv_caches) < R:
+                new_kv_caches.append(new_kv_caches[-1])
 
         final_logits = intermediate_logits[-1]
         carried_states = (z_r.detach(), y_r.detach())

@@ -58,6 +58,37 @@ def run_v2_benchmark():
     if os.path.exists(bench_bitcos_path):
         os.remove(bench_bitcos_path)
 
+    # 3. Micro-benchmark de Capa BitLinear (192 -> 384): FP32 vs INT8 Matmul vs Sign Decomposition vs Kernel C AVX2
+    layer = BitLinear(cfg.d_model, cfg.d_ff_expert).eval()
+    x_test = torch.randn(16, cfg.block_size, cfg.d_model)
+
+    for _ in range(5):
+        _ = layer(x_test)
+        _ = layer(x_test, integer_mode=True)
+        _ = layer(x_test, add_sub_only=True)
+        _ = layer(x_test, use_kernel=True)
+
+    iters = 100
+    t_start = time.perf_counter()
+    for _ in range(iters):
+        _ = layer(x_test)
+    l_fp_ms = ((time.perf_counter() - t_start) / iters) * 1000.0
+
+    t_start = time.perf_counter()
+    for _ in range(iters):
+        _ = layer(x_test, integer_mode=True)
+    l_int_ms = ((time.perf_counter() - t_start) / iters) * 1000.0
+
+    t_start = time.perf_counter()
+    for _ in range(iters):
+        _ = layer(x_test, add_sub_only=True)
+    l_as_ms = ((time.perf_counter() - t_start) / iters) * 1000.0
+
+    t_start = time.perf_counter()
+    for _ in range(iters):
+        _ = layer(x_test, use_kernel=True)
+    l_k_ms = ((time.perf_counter() - t_start) / iters) * 1000.0
+
     print("=== Benchmark TRDM-v3 en Linux CPU (i3-1115G4) ===")
     print(f"Parámetros únicos totales         : {total_params:,} ({100*ternary_params/total_params:.1f}% ternarios)")
     print(f"Parámetros ternarios ({ternary_params:,}) : {bitcos_bytes/1024:.1f} KB en BITCOSv2 ({tern_stats.get('bitcos_bpw', 0):.3f} bpw)")
@@ -68,6 +99,11 @@ def run_v2_benchmark():
     print(f"Generación Block-Causal (FP32)    : {infer_fp_ms:.1f} ms ({evals_fp} evals de bloque local)")
     print(f"Generación Block-Causal (INT8)    : {infer_int_ms:.1f} ms ({evals_int} evals desde binario BITCOSv2)")
     print(f"RAM máxima del proceso (RSS)      : {peak_ram_mb:.1f} MB")
+    print("\n=== Micro-benchmark BitLinear (192 -> 384, lote 16x16) ===")
+    print(f"FP32 PyTorch F.linear              : {l_fp_ms:.3f} ms")
+    print(f"INT8 PyTorch torch.matmul          : {l_int_ms:.3f} ms")
+    print(f"Suma/Resta Pura (Descomp. Signos)  : {l_as_ms:.3f} ms")
+    print(f"Kernel C Nativo (OpenMP/AVX2)      : {l_k_ms:.3f} ms")
 
 
 if __name__ == "__main__":
