@@ -1,0 +1,21 @@
+# Virtual environment
+venv/
+env/
+.env/
+
+# Python cache and bytecode
+__pycache__/
+*.py[cod]
+*$py.class
+
+# C++ build artifacts
+*.o
+*.so
+.ninja*
+
+# Checkpoints antiguos
+trdm_checkpoint.pt
+
+# OS specific files
+.DS_Store
+Thumbs.db
