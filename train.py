@@ -8,16 +8,26 @@ from torch.utils.data import DataLoader
 
 from config import HybridConfig
 from model import TernaryRecursiveDiffusionLM
-from data import ProceduralNaturalTextDataset, apply_discrete_diffusion_corruption
+from data import ProceduralCompositionalDataset, apply_discrete_diffusion_corruption
+
+
+def corrupt_batch(
+    x_0: torch.Tensor, can_mask: torch.Tensor, t_vec: torch.Tensor, cfg: HybridConfig
+) -> Tuple[torch.Tensor, torch.Tensor]:
+    B = x_0.size(0)
+    rand_u = torch.rand_like(x_0.float())
+    mask_pos = (rand_u < t_vec.unsqueeze(1)) & can_mask
+    for b in range(B):
+        if not mask_pos[b].any() and can_mask[b].any():
+            valid_idx = torch.nonzero(can_mask[b], as_tuple=False).squeeze(-1)
+            chosen = valid_idx[torch.randint(0, len(valid_idx), (1,))]
+            mask_pos[b, chosen] = True
+    x_t = x_0.clone()
+    x_t[mask_pos] = cfg.mask_token_id
+    return x_t, mask_pos
 
 
 def update_bitnet_schedule(optimizer: torch.optim.Optimizer, step: int, cfg: HybridConfig) -> float:
-    """
-    Planificador en dos etapas para BitNet b1.58 + AdamW:
-    - Calentamiento lineal (primer 10% de pasos).
-    - Decaimiento coseno posterior.
-    - Desactivación de weight decay en el último 20% del entrenamiento para estabilizar STE.
-    """
     warmup_steps = max(10, int(0.10 * cfg.max_steps))
     second_stage_start = int(0.80 * cfg.max_steps)
 
@@ -50,7 +60,8 @@ def compute_v2_hybrid_loss(
 
     def _masked_weighted_ce(logits: torch.Tensor) -> torch.Tensor:
         token_loss = F.cross_entropy(logits.view(-1, V), x_0.view(-1), reduction="none").view(B, L)
-        weights = (1.0 / t_noise).unsqueeze(1)
+        # Ponderación 1/t normalizada por tokens enmascarados
+        weights = (1.0 / t_noise.clamp(min=0.05)).unsqueeze(1)
         return (token_loss * mask_f * weights).sum() / total_masked
 
     loss_final = _masked_weighted_ce(final_logits)
@@ -105,21 +116,29 @@ def compute_v2_hybrid_loss(
 
 
 @torch.no_grad()
-def evaluate_model(
+def evaluate_model_h1(
     model: TernaryRecursiveDiffusionLM, val_loader: DataLoader, cfg: HybridConfig
 ) -> Dict[str, float]:
+    """
+    Evaluación rigurosa sobre combinaciones estrictamente reservadas (Held-Out)
+    probando la Hipótesis H1 (escalado en inferencia R=1, 2, 4 sin reentrenar).
+    """
     model.eval()
     results = {}
-    for fixed_t in (0.50, 1.00):
+    for r_infer in (1, 2, 4):
         total_acc, count = 0.0, 0
         for x_0, can_mask in val_loader:
-            x_t, mask_pos, t_vec = apply_discrete_diffusion_corruption(x_0, can_mask, cfg, fixed_t=fixed_t)
-            logits, _, _, _, _ = model(x_t, t_vec, record_telemetry=(fixed_t == 0.50 and count == 0))
+            # Evaluación a nivel de ruido medio (t=0.50)
+            x_t, mask_pos, t_vec = apply_discrete_diffusion_corruption(x_0, can_mask, cfg, fixed_t=0.50)
+            dt_vec = torch.full_like(t_vec, 0.25)
+            logits, _, _, _, _ = model(
+                x_t, t_vec, delta_t=dt_vec, num_recursions=r_infer, record_telemetry=False
+            )
             preds = logits.argmax(dim=-1)
             acc = ((preds == x_0) & mask_pos).float().sum() / mask_pos.float().sum().clamp(min=1.0)
             total_acc += float(acc.item())
             count += 1
-        results[f"val_acc_t{int(fixed_t*100)}"] = total_acc / max(1, count)
+        results[f"val_ood_acc_R{r_infer}"] = total_acc / max(1, count)
     model.train()
     return results
 
@@ -133,8 +152,9 @@ def train():
     torch.manual_seed(cfg.seed)
     torch.set_num_threads(cfg.cpu_threads)
 
-    train_ds = ProceduralNaturalTextDataset(cfg, split="train", num_samples=2400)
-    val_ds = ProceduralNaturalTextDataset(cfg, split="val", num_samples=160)
+    # Dataset composicional con 96 combinaciones reservadas (held-out)
+    train_ds = ProceduralCompositionalDataset(cfg, split="train", num_samples=2400)
+    val_ds = ProceduralCompositionalDataset(cfg, split="val", num_samples=320)
     train_loader = DataLoader(train_ds, batch_size=cfg.batch_size, shuffle=True, drop_last=True)
     val_loader = DataLoader(val_ds, batch_size=cfg.batch_size, shuffle=False)
 
@@ -142,7 +162,7 @@ def train():
     optimizer = torch.optim.AdamW(model.configure_adamw_groups(), lr=cfg.learning_rate, betas=cfg.betas)
 
     unique_params = sum(p.numel() for p in model.parameters())
-    print(f"[TRDM-v3] Parámetros únicos: {unique_params:,} | GQA {cfg.n_heads}:{cfg.n_kv_heads} | BlockSize: {cfg.block_size} | Longitud L={cfg.max_seq_len}")
+    print(f"[TRDM-v3 Saneado] Parámetros únicos: {unique_params:,} | R_train={cfg.num_recursions} | GQA {cfg.n_heads}:{cfg.n_kv_heads} | BlockSize: {cfg.block_size}")
 
     step = 0
     t0 = time.perf_counter()
@@ -152,14 +172,32 @@ def train():
             step += 1
             record_tel = (step % cfg.eval_every == 0) or (step == 1)
 
-            x_t, mask_pos, t_vec = apply_discrete_diffusion_corruption(x_0, can_mask, cfg)
-            final_logits, inter_logits, halt_probs, _, _ = model(x_t, t_vec, record_telemetry=record_tel)
-            loss, metrics = compute_v2_hybrid_loss(
-                final_logits, inter_logits, halt_probs, x_0, mask_pos, t_vec, cfg
+            # -------------------------------------------------------------
+            # Paso A: Ruido inicial t_1 ~ U(0.35, 1.0)
+            # -------------------------------------------------------------
+            t_1 = torch.empty(cfg.batch_size, device=cfg.device).uniform_(0.35, 1.0)
+            x_t1, mask_1 = corrupt_batch(x_0, can_mask, t_1, cfg)
+
+            final_lg_1, inter_1, h_1, _, carried_1 = model(x_t1, t_1, record_telemetry=record_tel)
+            loss_1, metrics_1 = compute_v2_hybrid_loss(final_lg_1, inter_1, h_1, x_0, mask_1, t_1, cfg)
+
+            # -------------------------------------------------------------
+            # Paso B: Paso encadenado con memoria transportada y delta_t variable
+            # Entrena activamente carry_gate, delta_t y la evaluación con t_2 -> 0.0
+            # -------------------------------------------------------------
+            t_2 = t_1 * torch.empty(cfg.batch_size, device=cfg.device).uniform_(0.0, 0.6)
+            delta_t = t_1 - t_2
+            x_t2, mask_2 = corrupt_batch(x_0, can_mask, t_2, cfg)
+
+            final_lg_2, inter_2, h_2, _, _ = model(
+                x_t2, t_2, delta_t=delta_t, prev_states=carried_1, record_telemetry=False
             )
+            loss_2, metrics_2 = compute_v2_hybrid_loss(final_lg_2, inter_2, h_2, x_0, mask_2, t_2, cfg)
+
+            total_loss = 0.5 * (loss_1 + loss_2)
 
             optimizer.zero_grad(set_to_none=True)
-            loss.backward()
+            total_loss.backward()
             grad_norm = torch.nn.utils.clip_grad_norm_(model.parameters(), cfg.grad_clip)
 
             if torch.isfinite(grad_norm):
@@ -169,7 +207,7 @@ def train():
                 current_lr = optimizer.param_groups[0]["lr"]
 
             if record_tel:
-                val_metrics = evaluate_model(model, val_loader, cfg)
+                h1_val_metrics = evaluate_model_h1(model, val_loader, cfg)
                 tern_stats = model.collect_ternary_telemetry()
                 act_ratios = [round(a, 2) for a in model.last_active_token_ratios]
                 elapsed = time.perf_counter() - t0
@@ -177,11 +215,11 @@ def train():
                 print(
                     f"Paso {step:03d}/{cfg.max_steps} | "
                     f"LR: {current_lr:.2e} | "
-                    f"Loss: {metrics['loss_total']:.3f} (Cons:{metrics['loss_cons']:.3f}) | "
-                    f"Acc(r1->r{cfg.num_recursions}): {metrics['acc_r1']:.2f}->{metrics[f'acc_r{cfg.num_recursions}']:.2f} | "
-                    f"Val(50/100%): {val_metrics['val_acc_t50']:.2f}/{val_metrics['val_acc_t100']:.2f} | "
+                    f"Loss: {total_loss.item():.3f} | "
+                    f"H1 OOD Acc(R=1/2/4): {h1_val_metrics['val_ood_acc_R1']:.2f}/{h1_val_metrics['val_ood_acc_R2']:.2f}/{h1_val_metrics['val_ood_acc_R4']:.2f} | "
                     f"BITCOS: {tern_stats.get('bitcos_bpw', 0):.2f} bpw | "
-                    f"MoR Activos: {act_ratios} | RAM: {get_peak_ram_mb():.1f} MB | {elapsed:.1f}s"
+                    f"MoR: {act_ratios} | RAM: {get_peak_ram_mb():.1f} MB | {elapsed:.1f}s",
+                    flush=True,
                 )
 
             if step >= cfg.max_steps:

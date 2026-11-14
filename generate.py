@@ -6,6 +6,18 @@ import torch.nn.functional as F
 
 from config import HybridConfig
 from model import TernaryRecursiveDiffusionLM
+from data import ProceduralCompositionalDataset
+
+
+def decode_tokens_clean(tokens: List[int], cfg: HybridConfig) -> str:
+    """Decodificación limpia por bytes UTF-8 sin truncamientos heurísticos de texto."""
+    byte_seq = []
+    for tok in tokens:
+        if tok in (cfg.eos_token_id, cfg.pad_token_id):
+            break
+        if tok < 256:
+            byte_seq.append(tok)
+    return bytes(byte_seq).decode("utf-8", errors="replace")
 
 
 @torch.no_grad()
@@ -13,21 +25,27 @@ def generate_block_causal_with_kv_cache(
     model: TernaryRecursiveDiffusionLM,
     prompt_text: str,
     cfg: HybridConfig,
-    gen_length: int = 16,
+    gen_length: int = 24,
+    num_recursions: int = None,
 ) -> Tuple[str, List[str], int]:
     """
-    Generador Block-Causal TRDM-v3:
-    1. Congela en caché KV los bloques que pertenecen al prompt.
-    2. En el bloque activo, aplica difusión con Reconsideración de Tokens (Remasking de baja confianza).
-    3. Transporta el estado latente (z_R, y_R) desconectado entre pasos sucesivos.
-    4. Condiciona por salto delta_t y detiene limpiamente al consolidar el punto o [EOS].
+    Generador Block-Causal TRDM-v3 Saneado:
+    1. Procesa bloques del prompt y congela K, V en la caché.
+    2. En el bloque activo, aplica difusión con Reconsideración de Tokens (Remasking).
+    3. Transporta el estado latente (z_R, y_R) desconectado entre pasos.
+    4. Detención natural en cuanto se consolida [EOS] o [PAD] (sin heurísticas de texto).
     """
     model.eval()
+    R = num_recursions if num_recursions is not None else cfg.num_recursions
     prompt_bytes = list(prompt_text.encode("utf-8"))
-    seq = [cfg.bos_token_id] + prompt_bytes + [cfg.mask_token_id] * gen_length
-    seq = seq[: cfg.max_seq_len]
+
+    # Secuencia inicial: prompt + posiciones [MASK] alineadas a múltiplos de bloque
     prompt_len = 1 + len(prompt_bytes)
-    total_len = len(seq)
+    needed_len = prompt_len + gen_length
+    total_len = min(cfg.max_seq_len, math.ceil(needed_len / cfg.block_size) * cfg.block_size)
+    num_masks = max(1, total_len - prompt_len)
+    seq = [cfg.bos_token_id] + prompt_bytes + [cfg.mask_token_id] * num_masks
+    seq = seq[:total_len]
 
     x_full = torch.tensor([seq], dtype=torch.long, device=cfg.device)
     B_blk = cfg.block_size
@@ -43,7 +61,7 @@ def generate_block_causal_with_kv_cache(
         b_end = min((b_idx + 1) * B_blk, total_len)
         block_tokens = x_full[:, b_start:b_end]
 
-        # Bloques del prompt (sin máscaras): solo calculamos su caché KV
+        # Bloque del prompt sin máscaras: consolidamos su caché KV una única vez
         if not (block_tokens == cfg.mask_token_id).any():
             t_zero = torch.tensor([0.0], device=cfg.device)
             dt_zero = torch.tensor([0.0], device=cfg.device)
@@ -51,6 +69,7 @@ def generate_block_causal_with_kv_cache(
                 block_tokens,
                 t_zero,
                 delta_t=dt_zero,
+                num_recursions=R,
                 kv_caches_per_r=kv_caches_committed,
                 start_pos=committed_len,
             )
@@ -81,6 +100,7 @@ def generate_block_causal_with_kv_cache(
                 t_tensor,
                 delta_t=dt_tensor,
                 prev_states=carried_states,
+                num_recursions=R,
                 kv_caches_per_r=kv_caches_committed,
                 start_pos=committed_len,
             )
@@ -91,7 +111,7 @@ def generate_block_causal_with_kv_cache(
             probs = F.softmax(logits[0], dim=-1)
             confidences, best_tokens = probs.max(dim=-1)
 
-            # Política de Reconsideración (Low-Confidence Remasking)
+            # Reconsideración de Tokens (Remasking de baja confianza)
             edit_indices = torch.nonzero(editable_positions, as_tuple=False).squeeze(-1)
             block_tokens[0, edit_indices] = best_tokens[edit_indices]
 
@@ -105,51 +125,62 @@ def generate_block_causal_with_kv_cache(
 
             x_full[:, b_start:b_end] = block_tokens
 
-            # Decodificar respuesta limpia hasta el primer delimitador de fin (. o \n o EOS)
-            resp_tokens = x_full[0, prompt_len:total_len].tolist()
-            resp_chars = []
-            for tok in resp_tokens:
-                if tok == cfg.mask_token_id:
-                    resp_chars.append("█")
-                elif tok in (cfg.eos_token_id, cfg.pad_token_id):
-                    break
-                elif tok < 256:
-                    ch = chr(tok)
-                    resp_chars.append(ch)
-                    if ch in ('.', '\n'):
-                        break
-            history.append("".join(resp_chars).strip())
+            # Historial decodificado limpiamente
+            resp_slice = x_full[0, prompt_len:total_len].tolist()
+            history.append(decode_tokens_clean(resp_slice, cfg))
 
-        # Consolidar estados K, V finales del bloque en la caché
+        # Consolidar caché KV del bloque finalizado
         t_zero = torch.tensor([0.0], device=cfg.device)
         dt_zero = torch.tensor([0.0], device=cfg.device)
         _, _, _, kv_caches_committed, _ = model(
             block_tokens,
             t_zero,
             delta_t=dt_zero,
+            num_recursions=R,
             kv_caches_per_r=kv_caches_committed,
             start_pos=committed_len,
         )
         committed_len = b_end
 
-        # Si el bloque activo consolidó el fin de la respuesta, detener la generación
-        current_resp_text = history[-1] if history else ""
-        if "." in current_resp_text or (block_tokens[0] == cfg.eos_token_id).any():
+        # Corte natural LLaDA: si el bloque contiene [EOS], detener sin procesar más bloques
+        if (block_tokens[0] == cfg.eos_token_id).any():
             break
 
     final_resp_tokens = x_full[0, prompt_len:total_len].tolist()
-    final_chars = []
-    for tok in final_resp_tokens:
-        if tok in (cfg.mask_token_id, cfg.eos_token_id, cfg.pad_token_id):
-            break
-        elif tok < 256:
-            ch = chr(tok)
-            final_chars.append(ch)
-            if ch in ('.', '\n'):
-                break
-
-    final_text = "".join(final_chars).strip()
+    final_text = decode_tokens_clean(final_resp_tokens, cfg)
     return final_text, history, total_block_evals
+
+
+def test_hypothesis_h1(model: TernaryRecursiveDiffusionLM, cfg: HybridConfig):
+    """
+    Prueba de la Hipótesis H1:
+    Modelo entrenado con R=2, evaluado con R in {1, 2, 4, 8} sobre combinaciones
+    rigurosamente reservadas (Held-Out) jamás vistas en entrenamiento.
+    """
+    print("\n" + "=" * 75)
+    print("  TEST HIPÓTESIS H1: ESCALADO DE CÓMPUTO EN INFERENCIA (R in {1, 2, 4, 8}) ")
+    print("=" * 75)
+
+    held_out_cases = [
+        # Combinaciones reservadas: nodo, perfil, redundancia, carga -> esperado
+        ("nodo: server\nperfil: turbo\nred: dual\ncarga: pico\n", "watt: 87\nms: 16\n"),
+        ("nodo: compute\nperfil: eco\nred: simple\ncarga: pico\n", "watt: 22\nms: 40\n"),
+        ("nodo: router\nperfil: edge\nred: mesh\ncarga: pico\n", "watt: 53\nms: 7\n"),
+        ("nodo: storage\nperfil: batch\nred: triple\ncarga: media\n", "watt: 35\nms: 22\n"),
+    ]
+
+    for c_idx, (prompt, target_esperado) in enumerate(held_out_cases, 1):
+        print(f"\n--- Caso OOD #{c_idx} (Held-Out) ---")
+        print(f"Prompt   : {repr(prompt)}")
+        print(f"Esperado : {repr(target_esperado.strip())}")
+
+        for r_test in (1, 2, 4, 8):
+            salida, _, evals = generate_block_causal_with_kv_cache(
+                model, prompt, cfg, num_recursions=r_test
+            )
+            acierto = (salida.strip() == target_esperado.strip())
+            icono = "✓ EXACTO" if acierto else "✗ DIF"
+            print(f"  R={r_test} | {icono} | Salida: {repr(salida.strip())} | Evals: {evals}")
 
 
 if __name__ == "__main__":
@@ -162,25 +193,6 @@ if __name__ == "__main__":
         loaded = model.load_bitcos_archive(cfg.bitcos_export_path)
         print(f"[BITCOSv2] {loaded} capas ternarias cargadas en modo de inferencia entera int8/int32.")
     else:
-        print("[Modo FP32/QAT] Evaluando sin archivo BITCOS binario.")
+        print("[Modo FP32/QAT] Evaluando sin archivo binario BITCOS.")
 
-    prompts_prueba = [
-        ("Pregunta: Cual es la capital de Francia?\nRespuesta: ", "Paris"),
-        ("Pregunta: De que color es el cielo despejado?\nRespuesta: ", "Azul"),
-        ("Pregunta: Que animal ladra y cuida la casa?\nRespuesta: ", "El perro"),
-        ("Pregunta: Cual es el opuesto de frio?\nRespuesta: ", "Caliente"),
-        ("Pregunta: Que profesional apaga los incendios?\nRespuesta: ", "El bombero"),
-    ]
-
-    print("=========================================================================")
-    print("  TRDM-v3: DIFUSIÓN BLOCK-CAUSAL + REMASKING + GQA + C_cap(t) + DELTA_t  ")
-    print("=========================================================================\n")
-
-    for idx, (p_text, esperado) in enumerate(prompts_prueba, 1):
-        print(f"--- Caso #{idx} (Esperado: '{esperado}') ---")
-        print(f"Prompt : {repr(p_text.strip())}")
-        texto_final, rondas, evals = generate_block_causal_with_kv_cache(model, p_text, cfg)
-        print("Evolución por paso activo:")
-        for r_i, r_str in enumerate(rondas, 1):
-            print(f"  [Paso {r_i}] -> '{r_str}'")
-        print(f"Respuesta final limpia: '{texto_final}' | Evaluaciones de bloque: {evals}\n")
+    test_hypothesis_h1(model, cfg)

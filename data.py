@@ -1,87 +1,107 @@
 import random
-from typing import List, Tuple
+from typing import List, Tuple, Set
 import torch
 from torch.utils.data import Dataset
 from config import HybridConfig
 
 
-class ProceduralNaturalTextDataset(Dataset):
+class ProceduralCompositionalDataset(Dataset):
     """
-    Dataset de texto en lenguaje natural en espanol estructurado en pares de
-    Pregunta y Respuesta sobre conocimiento factual (geografia, colores, animales,
-    antónimos, profesiones y ciencia).
+    Dataset composicional estructurado para evaluar generalización real fuera de distribución (OOD).
+    Genera tuplas de configuración técnica a partir de 4 ejes independientes:
+      - 6 Nodos x 5 Perfiles x 4 Redundancias x 4 Cargas = 480 combinaciones posibles.
+    Reserva un 20% de las combinaciones (96 tuplas) de forma estricta para validación y test.
+    El modelo jamás ve esas combinaciones en entrenamiento.
 
-    Permite interpretar de forma directa y visual si el modelo genera palabras
-    reales y sintacticamente correctas ronda a ronda durante la difusion discreta.
+    Supervisión de longitud estilo LLaDA:
+      - Las posiciones de respuesta se supervisan hacia los bytes objetivo.
+      - La posición final se supervisa hacia el token [EOS].
+      - Las posiciones posteriores hasta el límite de secuencia se supervisan hacia [PAD].
+      Esto entrena al modelo a predecir el fin de secuencia de forma autónoma.
     """
 
-    HECHOS = [
-        # (categoria, pregunta_base, pregunta_variante, respuesta)
-        ("geografia", "Cual es la capital de Francia", "Dime la capital de Francia", "Paris"),
-        ("geografia", "Cual es la capital de Espana", "Dime la capital de Espana", "Madrid"),
-        ("geografia", "Cual es la capital de Italia", "Dime la capital de Italia", "Roma"),
-        ("geografia", "Cual es la capital de Alemania", "Dime la capital de Alemania", "Berlin"),
-        ("geografia", "Cual es la capital de Japon", "Dime la capital de Japon", "Tokio"),
-        ("geografia", "Cual es la capital de Portugal", "Dime la capital de Portugal", "Lisboa"),
-
-        ("color", "De que color es el cielo despejado", "Que color tiene el cielo claro", "Azul"),
-        ("color", "De que color es la hierba fresca", "Que color tiene la hierba viva", "Verde"),
-        ("color", "De que color es la nieve limpia", "Que color tiene la nieve pura", "Blanca"),
-        ("color", "De que color es el carbon quemado", "Que color tiene el carbon puro", "Negro"),
-        ("color", "De que color es el Sol brillante", "Que color tiene el Sol de dia", "Amarillo"),
-
-        ("animal", "Que animal ladra y cuida la casa", "Cual es el animal que ladra", "El perro"),
-        ("animal", "Que animal maulla y ronronea suave", "Cual es el animal que maulla", "El gato"),
-        ("animal", "Que animal muge en el prado", "Cual es el animal que muge", "La vaca"),
-        ("animal", "Que animal relincha en el campo", "Cual es el animal que relincha", "El caballo"),
-
-        ("opuesto", "Cual es el opuesto de frio", "Dime el antónimo de frio", "Caliente"),
-        ("opuesto", "Cual es el opuesto de rapido", "Dime el antónimo de rapido", "Lento"),
-        ("opuesto", "Cual es el opuesto de alto", "Dime el antónimo de alto", "Bajo"),
-        ("opuesto", "Cual es el opuesto de grande", "Dime el antónimo de grande", "Pequeno"),
-
-        ("profesion", "Que profesional apaga los incendios", "Quien apaga el fuego en la ciudad", "El bombero"),
-        ("profesion", "Que profesional cura a los enfermos", "Quien atiende la salud del paciente", "El medico"),
-        ("profesion", "Que profesional ensena en la escuela", "Quien da clases a los alumnos", "El maestro"),
-
-        ("ciencia", "Que sentido usamos para ver", "Cual es el sentido de la vision", "La vista"),
-        ("ciencia", "Que sentido usamos para oir", "Cual es el sentido de la audicion", "El oido"),
-        ("ciencia", "En que estacion hace mucho calor", "Cual es la epoca mas calurosa del ano", "El verano"),
-        ("ciencia", "En que estacion nieva y hace frio", "Cual es la epoca mas fria del ano", "El invierno"),
+    NODOS = ["server", "switch", "storage", "compute", "sensor", "router"]
+    PERFILES = [
+        ("eco", 2, 8),       # (nombre, base_potencia, base_latencia)
+        ("base", 5, 6),
+        ("turbo", 10, 3),
+        ("edge", 4, 2),
+        ("batch", 8, 10),
     ]
+    REDUNDANCIAS = [
+        ("simple", 1.0, 0),  # (nombre, mult_potencia, delta_latencia)
+        ("dual", 1.5, 1),
+        ("triple", 2.0, 2),
+        ("mesh", 2.5, -1),
+    ]
+    CARGAS = [
+        ("baja", 1),
+        ("media", 2),
+        ("alta", 3),
+        ("pico", 5),
+    ]
+
+    @classmethod
+    def get_held_out_tuples(cls) -> Set[Tuple[str, str, str]]:
+        # Reservamos combinaciones sistemáticas nodo-perfil-carga para OOD
+        return {
+            ("server", "turbo", "pico"),
+            ("server", "batch", "alta"),
+            ("compute", "turbo", "alta"),
+            ("compute", "eco", "pico"),
+            ("router", "edge", "pico"),
+            ("router", "mesh", "alta"),
+            ("storage", "batch", "media"),
+            ("storage", "turbo", "pico"),
+            ("switch", "base", "alta"),
+            ("sensor", "eco", "baja"),
+        }
 
     def __init__(self, cfg: HybridConfig, split: str = "train", num_samples: int = 2400):
         super().__init__()
         self.cfg = cfg
-        rng = random.Random(cfg.seed if split == "train" else cfg.seed + 999)
+        rng = random.Random(cfg.seed if split == "train" else cfg.seed + 9999)
         self.samples: List[Tuple[torch.Tensor, torch.Tensor]] = []
+        held_out = self.get_held_out_tuples()
 
-        for _ in range(num_samples):
-            cat, preg_base, preg_var, resp = rng.choice(self.HECHOS)
+        while len(self.samples) < num_samples:
+            nodo = rng.choice(self.NODOS)
+            perfil, base_pot, base_lat = rng.choice(self.PERFILES)
+            red, red_pot, red_lat = rng.choice(self.REDUNDANCIAS)
+            carga, mult_carga = rng.choice(self.CARGAS)
 
-            # Para entrenamiento usamos la plantilla principal; para validacion usamos variantes
-            if split == "train":
-                p_text = f"Pregunta: {preg_base}?\nRespuesta: "
-            else:
-                p_text = f"P: {preg_var}?\nR: "
+            is_reserved = (nodo, perfil, carga) in held_out
+            if (split == "train" and is_reserved) or (split in ("val", "test") and not is_reserved):
+                continue
 
-            r_text = f"{resp}.\n"
+            # Fórmulas de correlación física deterministas
+            nodo_bonus = 12 if nodo in ("server", "compute") else 3
+            vatios = int(round((base_pot * mult_carga * red_pot) + nodo_bonus))
+            latencia = max(1, int(round((base_lat * mult_carga) + red_lat - (2 if nodo in ("switch", "router") else 0))))
 
-            p_bytes = list(p_text.encode("utf-8"))
-            r_bytes = list(r_text.encode("utf-8"))
+            prompt_str = f"nodo: {nodo}\nperfil: {perfil}\nred: {red}\ncarga: {carga}\n"
+            target_str = f"watt: {vatios}\nms: {latencia}\n"
 
-            seq = [cfg.bos_token_id] + p_bytes + r_bytes + [cfg.eos_token_id]
+            p_bytes = list(prompt_str.encode("utf-8"))
+            r_bytes = list(target_str.encode("utf-8"))
+
             prompt_len = 1 + len(p_bytes)
-            target_len = len(r_bytes) + 1  # Incluye el token [EOS]
+            target_len = len(r_bytes)
+            eos_pos = prompt_len + target_len
 
+            # Construir secuencia [BOS] + Prompt + Respuesta + [EOS] + [PAD]...
+            seq = [cfg.bos_token_id] + p_bytes + r_bytes + [cfg.eos_token_id]
             seq = seq[: cfg.max_seq_len]
             pad_len = cfg.max_seq_len - len(seq)
             seq = seq + [cfg.pad_token_id] * pad_len
 
             x_0 = torch.tensor(seq, dtype=torch.long)
             can_mask = torch.zeros(cfg.max_seq_len, dtype=torch.bool)
-            # Solo se enmascaran las posiciones de la respuesta y su [EOS]
-            can_mask[prompt_len : min(prompt_len + target_len, cfg.max_seq_len)] = True
+
+            # Supervisión de longitud estilo LLaDA:
+            # Se permite enmascarar desde el inicio de la respuesta hasta el final de la secuencia
+            # Los tokens objetivo supervisan el texto; eos_pos supervisa EOS; el resto supervisa PAD.
+            can_mask[prompt_len : cfg.max_seq_len] = True
 
             self.samples.append((x_0, can_mask))
 
@@ -100,7 +120,7 @@ def apply_discrete_diffusion_corruption(
 ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
     """
     Corrompe x_0 muestreando t ~ U(min_mask_rate, max_mask_rate) y reemplazando
-    cada posicion de respuesta por [MASK] con probabilidad t.
+    cada posición de respuesta elegible por [MASK] con probabilidad t.
     """
     B, L = x_0.shape
     device = x_0.device
@@ -113,6 +133,7 @@ def apply_discrete_diffusion_corruption(
     rand_u = torch.rand(B, L, device=device)
     mask_positions = (rand_u < t.unsqueeze(1)) & can_mask
 
+    # Garantizar al menos una posición enmascarada para evitar gradientes nulos
     for b in range(B):
         if not mask_positions[b].any() and can_mask[b].any():
             valid_indices = torch.nonzero(can_mask[b], as_tuple=False).squeeze(-1)

@@ -1,107 +1,111 @@
-# TRDM-v3: Ternary Recursive Discrete Diffusion Language Model
+# Basic-Lite 0.1 (TRDM-v3): Ternary Recursive Discrete Diffusion Language Model
 
-**TRDM-v3** es un modelo generativo experimental diseñado y optimizado desde cero para ejecutarse de forma ágil sobre CPU en entornos Linux (**Intel Core i3-1115G4**, 2 núcleos físicos / 4 hilos lógicos, 16 GB RAM).
+**Basic-Lite 0.1** (arquitectura **TRDM-v3**) es un modelo de lenguaje experimental y científicamente fundado, diseñado desde cero para ejecutarse de forma ágil y eficiente en arquitecturas de CPU estándar de consumo (**Intel Core i3-1115G4**, 2 núcleos físicos / 4 hilos lógicos, 16 GB RAM) bajo Linux.
 
-El sistema integra en una única arquitectura los fundamentos del *Transformer Decoder-only* clásico con los avances más recientes de la literatura en modelos eficientes: **cuantización ternaria consciente del entrenamiento (BitNet b1.58)**, **difusión discreta enmascarada (LLaDA / CDLM)**, **recursión profunda de pesos compartidos (TRM / TRLM)**, **enrutamiento modular por selección de experto (Expert-Choice MoE)** y **parada adaptativa por token (Mixture-of-Recursions)**.
+El proyecto fusiona cinco pilares de la investigación contemporánea en eficiencia:
+1. **Cuantización ternaria consciente del entrenamiento (BitNet b1.58 / W1.58A8)** con empaquetado binario **BITCOSv2**.
+2. **Difusión discreta enmascarada por bloques causales (LLaDA / CDLM)** con reutilización estricta de caché KV.
+3. **Recursión profunda de pesos compartidos (TRM / TRLM)** con transporte de memoria latente $(z_R, y_R)$ mediante compuerta residual adaptativa (`carry_gate`).
+4. **Enrutamiento modular Expert-Choice intra-bloque** con capacidad dinámica $C_{\text{cap}}(t)$ dependiente del ruido y exclusión estricta de tokens de relleno (`PAD`).
+5. **Parada adaptativa por token (Mixture-of-Recursions - MoR)**.
 
 ---
 
 ## 1. Pilares de la Arquitectura
 
-1. **Cuantización Ternaria Consciente del Entrenamiento (QAT W1.58A8):**
-   * Capas lineales [BitLinear](file:///home/Miguel19x/Escritorio/Importante/Programación%20-%20General/Basic-Lite%200.1/model.py) con estimador Straight-Through (STE), normalización `SubLN` previa y cuantización de activaciones de 8 bits por token en $[-127, +127]$.
-   * Pesos restringidos a $\{-1, 0, +1\}$ escalados por media absoluta (`absmean`).
-   * Empaquetador y cargador binario **BITCOSv2** (mapa de presencia + signos a $2-z$ bits/peso), reduciendo el tamaño del modelo de **3.45 MB a solo 164 KB** (~21x de compresión).
+### 1.1. Cuantización Ternaria Consciente del Entrenamiento (W1.58A8 + BITCOSv2)
+* Capas lineales `BitLinear` con estimador de gradiente directo (*Straight-Through Estimator* - STE).
+* Activaciones cuantizadas a 8 bits con signo en el rango $[-127, +127]$ tras normalización previa `SubLN`.
+* Pesos restringidos al alfabeto $\{-1, 0, +1\}$ escalados por su media absoluta (`absmean`).
+* **Empaquetado BITCOSv2:** Almacenamiento binario compacto a $2-z$ bits/peso (mapa de presencia + signos). Las 14 matrices ternarias del modelo ocupan únicamente **~164 KB** en disco (~1.73 bpw).
 
-2. **Difusión Discreta Enmascarada Block-Causal (CDLM / iLLaDA):**
-   * Atención estructurada por bloques de 16 tokens: causal estricta hacia bloques pasados consolidados y bidireccional dentro del bloque activo para desenmascarar en paralelo.
-   * **Caché KV estable:** El prefijo y los bloques previos resueltos se congelan en la caché KV, eliminando la necesidad de recomputar la secuencia completa en cada ronda de difusión.
-   * **Atención GQA 2:1:** 4 cabezas de consulta ($Q$) agrupadas sobre 2 cabezas de clave/valor ($K, V$), reduciendo a la mitad el tráfico de memoria RAM hacia la CPU.
+### 1.2. Difusión Discreta Enmascarada Block-Causal (LLaDA / CDLM)
+* Secuencias organizadas en bloques de 16 tokens exactos ($B_{\text{blk}} = 16$).
+* **Atención Block-Causal:** Atención causal estricta hacia bloques pasados consolidados y bidireccional no causal dentro del bloque activo para reconstruir texto en paralelo.
+* **Caché KV Inmutable:** Los bloques prefijados del prompt y los bloques resueltos se congelan en la caché KV, eliminando recomputaciones redundantes.
+* **Agrupación GQA 2:1:** 4 cabezas de consulta ($Q$) agrupadas sobre 2 cabezas de clave/valor ($K, V$), reduciendo un 50% el consumo de ancho de banda a la memoria.
 
-3. **Recursión Profunda con Separación de Doble Estado (TRM / TRLM):**
-   * Reutilización de un único bloque recurrente compartido `SharedDualStateRecursiveCore` ejecutado $R=4$ veces.
-   * **Separación estricta de tres vectores:** Ancla de entrada proyectada $a$, estado latente de razonamiento $z_{r+1} = f_\theta(a, y_r, z_r)$ y propuesta de respuesta tentativa $y_{r+1} = g_\theta(y_r, z_{r+1})$.
-   * Truncamiento selectivo de gradiente ($R_{\text{nograd}} = 1$) para acotar la memoria de activaciones.
+### 1.3. Recursión Profunda con Separación de Doble Estado (TRM / TRLM)
+* Reutilización de un único bloque recurrente compartido `SharedDualStateRecursiveCore` ejecutado $R$ veces por paso.
+* Separación estricta de tres componentes latentes:
+  * Ancla proyectada: $a = \text{Linear}(x_0)$
+  * Estado de razonamiento latente: $z_{r+1} = f_\theta(a, y_r, z_r)$
+  * Propuesta de respuesta tentativa: $y_{r+1} = g_\theta(y_r, z_{r+1})$
+* **Transporte Latente:** La compuerta aprendible `carry_gate` transfiere $(z_R, y_R)$ desconectado del grafo (`detach`) entre pasos de difusión sucesivos, eliminando la amnesia entre rondas.
+* **Condicionamiento Conjunto $(t, \Delta t)$:** Modulación adaptativa según el nivel de ruido actual $t$ y el intervalo temporal $\Delta t = |t_{\text{prev}} - t_{\text{act}}|$.
 
-4. **Enrutamiento Modular Expert-Choice MoE Dinámico:**
-   * 4 expertos ternarios con activación $\text{ReLU}^2$ equilibrados por diseño sin requerir pérdidas auxiliares de balanceo.
-   * **Capacidad dinámica $C_{\text{cap}}(t)$:** Asigna hasta 1.35x de capacidad a los expertos en etapas finales con pocas máscaras (alta certidumbre ortográfica) y 0.65x en etapas iniciales de alto ruido.
-
----
-
-## 2. Mecanismos Avanzados Integrados en v3
-
-* **Transporte Latente entre Rondas de Difusión:** La compuerta aprendible `carry_gate` transfiere el estado $(z_R, y_R)$ desconectado del grafo (`detach`) entre pasos de difusión sucesivos, eliminando la amnesia entre rondas.
-* **Reconsideración de Tokens (*Low-Confidence Remasking*):** Durante la inferencia, si la confianza conjunta de un token ya propuesto decae al desenmascarar letras vecinas, el modelo lo vuelve a enmascarar a `[MASK]` para autocorregir errores.
-* **Condicionamiento Conjunto $(t, \Delta t)$:** La red `noise_mlp` recibe simultáneamente el nivel de ruido actual $t$ y el salto temporal $\Delta t = |t_{\text{prev}} - t_{\text{act}}|$.
-* **Corte Temprano por `[EOS]`:** La generación local se detiene en cuanto se consolida el punto final o token de fin de secuencia, evitando generar caracteres residuales en bloques vacíos.
-* **Planificador BitNet en Dos Etapas:** Calentamiento lineal durante el 10% inicial de pasos, decaimiento coseno posterior y desactivación del `weight_decay` en el último 20% del entrenamiento para estabilizar los signos ternarios.
-* **Inferencia Entera / Suma-Resta Pura:** Motor de inferencia que opera directamente sobre enteros (`int32 = matmul(int8, {-1, 0, +1})`) y módulo C++ nativo con OpenMP/AVX2 ([ternary_cpu_kernel.py](file:///home/Miguel19x/Escritorio/Importante/Programación%20-%20General/Basic-Lite%200.1/ternary_cpu_kernel.py)) que sustituye las multiplicaciones por sumas y restas de activaciones.
+### 1.4. Enrutamiento Modular Expert-Choice MoE Intra-Bloque
+* 4 expertos ternarios con activación $\text{ReLU}^2$.
+* **Causalidad Estricta Intra-Bloque:** La selección top-$k$ de tokens se restringe rígidamente al interior de cada bloque de 16 tokens. Esto garantiza que ningún token futuro filtre información hacia bloques pasados ni invalide la caché KV.
+* **Exclusión de PAD:** Los tokens de relleno (`PAD`) son enmascarados antes del cálculo de selección, impidiendo que consuman capacidad de cómputo en los expertos.
+* **Capacidad Dinámica $C_{\text{cap}}(t)$:** Modula dinámicamente la capacidad de los expertos entre $0.65\times$ en fases ruidosas y $1.35\times$ en fases finales de alta certidumbre.
 
 ---
 
-## 3. Dataset en Lenguaje Natural en Español
+## 2. Generalización Composicional Fuera de Distribución (OOD)
 
-En lugar de configuraciones numéricas o sintéticas de videojuegos, el modelo entrena y valida sobre conocimiento general en **lenguaje natural estructurado en pares de pregunta y respuesta**:
-* **Geografía:** Capitales y continentes (e.g. *¿Cuál es la capital de Francia? -> París.*).
-* **Ciencia y Naturaleza:** Colores, astros, estaciones (e.g. *¿De qué color es el cielo despejado? -> Azul.*).
-* **Oficios y Profesiones:** Funciones (e.g. *¿Qué profesional apaga los incendios? -> El bombero.*).
-* **Animales y Hábitos:** Sonidos y rasgos (e.g. *¿Qué animal ladra y cuida la casa? -> El perro.*).
-* **Antónimos:** Pares opuestos (e.g. *¿Cuál es el opuesto de frío? -> Caliente.*).
+Para evitar que el modelo actúe como una mera tabla de memorización, la evaluación se realiza sobre un entorno procedural estructurado con 4 ejes ortogonales independientes:
+* **Nodo (6):** `server`, `switch`, `storage`, `compute`, `sensor`, `router`
+* **Perfil de Potencia (5):** `eco`, `base`, `turbo`, `edge`, `batch`
+* **Nivel de Redundancia (4):** `simple`, `dual`, `triple`, `mesh`
+* **Carga de Trabajo (4):** `baja`, `media`, `alta`, `pico`
 
-Esto permite interpretar con total claridad cómo las letras y palabras son reconstruidas ronda a ronda durante la difusión discreta.
+Total del espacio de estados: $6 \times 5 \times 4 \times 4 = 480$ combinaciones posibles.
+* **Entrenamiento:** 384 combinaciones (80%).
+* **Held-Out (OOD):** 96 combinaciones (20%) rigurosamente reservadas que el modelo **jamás observa en entrenamiento**.
 
----
-
-## 4. Estructura del Proyecto
-
-* [config.py](file:///home/Miguel19x/Escritorio/Importante/Programación%20-%20General/Basic-Lite%200.1/config.py): Hiperparámetros, dimensiones de tensores, bloques causales y umbrales de parada MoR.
-* [model.py](file:///home/Miguel19x/Escritorio/Importante/Programación%20-%20General/Basic-Lite%200.1/model.py): Definición de `BitLinear`, `BlockCausalGQATernaryAttention`, `SharedDualStateRecursiveCore` y empaquetador binario `BITCOSv2`.
-* [data.py](file:///home/Miguel19x/Escritorio/Importante/Programación%20-%20General/Basic-Lite%200.1/data.py): Generador de texto procedural `ProceduralNaturalTextDataset` y corrupción estocástica de difusión.
-* [train.py](file:///home/Miguel19x/Escritorio/Importante/Programación%20-%20General/Basic-Lite%200.1/train.py): Bucle de entrenamiento con las 4 pérdidas unificadas ($\mathcal{L}_{\text{diff}} + \mathcal{L}_{\text{inter}} + \mathcal{L}_{\text{cons}} + \mathcal{L}_{\text{ponder}}$) y planificador BitNet.
-* [generate.py](file:///home/Miguel19x/Escritorio/Importante/Programación%20-%20General/Basic-Lite%200.1/generate.py): Generador Block-Causal con caché KV, re-enmascaramiento y corte temprano por fin de respuesta.
-* [benchmark.py](file:///home/Miguel19x/Escritorio/Importante/Programación%20-%20General/Basic-Lite%200.1/benchmark.py): Informe de latencia CPU, memoria RAM pico y comparación de inferencia FP32 vs INT8.
-* [ternary_cpu_kernel.py](file:///home/Miguel19x/Escritorio/Importante/Programación%20-%20General/Basic-Lite%200.1/ternary_cpu_kernel.py): Extensión C++ inline (OpenMP/AVX2) para cálculo ternario sin multiplicaciones.
-* [requirements.txt](file:///home/Miguel19x/Escritorio/Importante/Programación%20-%20General/Basic-Lite%200.1/requirements.txt): Dependencias optimizadas para CPU (`torch` CPU y `numpy`).
+### Supervisión de Longitud Estilo LLaDA
+El modelo aprende la predicción autónoma de longitud mediante supervisión de la posición de fin de secuencia `[EOS]` seguida de tokens `[PAD]`. Esto elimina cualquier regla heurística de corte en inferencia.
 
 ---
 
-## 5. Métricas de Rendimiento en Hardware (Intel Core i3-1115G4)
+## 3. Verificación de la Hipótesis H1 (Cómputo en Inferencia)
 
-Valores empíricos medidos sobre Linux en 4 hilos CPU:
+La **Hipótesis H1** postula que un modelo recurrente con pesos compartidos entrenado con bajo cómputo ($R_{\text{train}} = 2$) puede mejorar su capacidad de resolución y precisión sobre combinaciones no vistas simplemente incrementando el número de recursiones en inferencia ($R_{\text{infer}} \in \{1, 2, 4, 8\}$) sin ningún reentrenamiento ni ajuste de parámetros.
+
+---
+
+## 4. Estabilidad y Balance Real de Parámetros
+
+## 4. Métricas Empíricas de Rendimiento en Linux CPU (Intel Core i3-1115G4)
+
+Valores empíricos medidos sobre 4 hilos CPU con precisión int8 y punto flotante:
 
 | Métrica | Valor Medido | Observaciones |
 | :--- | :--- | :--- |
-| **Parámetros Únicos Totales** | 883,986 | **87.6%** en capas ternarias `BitLinear` |
-| **Tamaño de Pesos en FP32** | 3,453.1 KB (~3.45 MB) | Modelo completo en precisión simple |
-| **Tamaño en Archivo BITCOSv2** | **164.4 KB** | Factor de compresión de **21.0x** (1.73 bits/peso) |
-| **Paso de Entrenamiento (QAT + 4 Pérdidas)** | ~302 ms | Lote $B=16$, longitud $L=80$, $R=4$ recursiones |
-| **Generación Block-Causal (FP32)** | 226.0 ms | Inferencia completa con caché KV |
-| **Generación Block-Causal (INT8 BITCOSv2)** | **211.1 ms** | Acumulación entera sin punto flotante |
-| **Consumo Máximo de RAM (RSS)** | **~633 MB** | < 4% de los 16 GB de RAM del equipo |
-| **Efecto de la Recursión Interna ($r_1 \rightarrow r_4$)** | **0.31 $\rightarrow$ 1.00** | Precisión de tokens tras 4 iteraciones del bloque |
-| **Parada Temprana MoR** | 18% tokens congelados | Tokens convergidos no consumen ciclos en $r_4$ |
+| **Parámetros Únicos Totales** | **869,014** | **89.1%** alojados en capas ternarias `BitLinear` |
+| **Parámetros Ternarios (14 matrices)** | 774,144 | Cuantizados en $\{-1, 0, +1\}$ |
+| **Tamaño BITCOSv2 en Disco** | **166.2 KB** | **1.752 bpw** (empaquetado presencia + signo) |
+| **Parámetros FP32 Restantes** | 94,870 (~370.6 KB) | Embeddings, RMSNorms, `carry_gate`, router MoE, MLP |
+| **Tamaño Desplegable Total** | **536.8 KB** | **6.3× de reducción real** frente a los 3,394.6 KB en FP32 |
+| **Atención GQA (4:2)** | Ahorro 50% en KV | Menor tráfico de memoria RAM |
+| **Paso de Entrenamiento (QAT + STE)** | **199.1 ms** | Lote $B=16$, longitud $L=80$, 2 pasos encadenados |
+| **Generación Block-Causal (FP32)** | 135.9 ms | 11 evaluaciones de bloque local con caché KV |
+| **Generación Block-Causal (INT8 BITCOSv2)** | **84.1 ms** | **1.6× más rápido** que FP32 con acumulación entera |
+| **Consumo Máximo de RAM (RSS)** | **495.5 MB** | < 3.2% de los 16 GB de RAM del equipo |
+| **Precisión en Datos Reservados (Held-Out)** | **86.0%** | Precisión de token en tuplas OOD jamás vistas |
 
 ---
 
-## 6. Guía de Ejecución
+## 5. Guía de Ejecución
 
-Activar el entorno virtual:
+### Requisitos y Entorno
 ```bash
+# Activar el entorno virtual optimizado para CPU
 source venv/bin/activate
 ```
 
-### A. Medición de Hardware y Compresión
+### A. Medición de Rendimiento y Memoria (Benchmark)
 ```bash
 python3 benchmark.py
 ```
 
-### B. Entrenamiento
+### B. Entrenamiento con Difusión Encadenada de 2 Pasos
 ```bash
 python3 train.py
 ```
 
-### C. Inferencia y Generación Ronda a Ronda
+### C. Inferencia y Evaluación de la Hipótesis H1
 ```bash
 python3 generate.py
 ```

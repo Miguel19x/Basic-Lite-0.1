@@ -1,3 +1,5 @@
+import os
+import sys
 import torch
 from torch.utils.cpp_extension import load_inline
 
@@ -46,6 +48,10 @@ def load_ternary_cpu_kernel():
     Compila al vuelo con load_inline un kernel en C++ con OpenMP/AVX2
     que ejecuta la capa ternaria únicamente sumando y restando activaciones enteras.
     """
+    bin_dir = os.path.dirname(sys.executable)
+    if bin_dir not in os.environ.get("PATH", ""):
+        os.environ["PATH"] = f"{bin_dir}:{os.environ.get('PATH', '')}"
+
     return load_inline(
         name="ternary_cpu_ext",
         cpp_sources=cpp_source,
