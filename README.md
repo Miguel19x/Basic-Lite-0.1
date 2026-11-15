@@ -11,6 +11,33 @@ El proyecto fusiona cinco ejes clave de la investigación contemporánea en mode
 
 ---
 
+## Esquema Visual de la Arquitectura TRDM-v4
+
+```mermaid
+flowchart TD
+    subgraph InputStage ["1. Entrada y Atención Block-Causal"]
+        Prompt["Tokens de Entrada (Bloque B=16)"] --> GQA["Atención GQA 4:2 (Block-Causal)"]
+        PastKV[("Caché KV Histórica Inmutable")] -.->|Contexto Pasado Congelado| GQA
+    end
+
+    subgraph RecCore ["2. Núcleo Recurrente Compartido (x R profundidades)"]
+        GQA --> Anchor["Proyección Ancla: a = Linear(x_0)"]
+        Anchor --> ZBlock["Estado Latente de Razonamiento<br/>z_(r+1) = f(a, y_r, z_r)"]
+        ZBlock --> YBlock["Propuesta de Respuesta Tentativa<br/>y_(r+1) = g(y_r, z_(r+1))"]
+        SinPE["Incrustación Sinusoidal Continua<br/>u_r = (r+1) / R"] -.->|Modulación de Profundidad| ZBlock
+        YBlock --> ResScale["Escalado Residual Amortiguado<br/>2 / (R + 1)"]
+    end
+
+    subgraph RoutingAndOutput ["3. Enrutamiento Modular y Decodificación"]
+        ResScale --> MoE["Router Expert-Choice MoE<br/>(4 expertos ternarios intra-bloque)"]
+        PadMask["Máscara PAD (Exclusión Estricta)"] -.->|Aislamiento| MoE
+        MoE --> BitLinearOut["Proyección de Salida BitLinear (W1.58)"]
+        BitLinearOut --> BlockOutput["Bloque Decodificado + Actualización Caché KV"]
+    end
+```
+
+---
+
 ## 1. Auditoría Estadística del Dataset y Deconstrucción del Techo Trivial (85.5%)
 
 En iteraciones iniciales, se reportaban métricas de *"precisión de tokens"* superiores al 86% sobre secuencias fuera de distribución (OOD). La auditoría estadística formal en Python puro ([auditoria_dataset.py](file:///home/Miguel19x/Escritorio/Importante/Programación%20-%20General/Basic-Lite%200.1/auditoria_dataset.py)) demostró de manera concluyente que dicho porcentaje era un **espejismo estadístico**:
@@ -39,21 +66,23 @@ Techo Dígitos Clase Mayoritaria             : 21.17%
 
 ---
 
-## 2. Novedades y Correcciones Arquitectónicas en TRDM-v4
+## 2. Novedades y Matriz de Decisiones Arquitectónicas (ADR)
 
-### 2.1. Codificación Sinusoidal Continua de Profundidad ($\text{PE}(u_r)$)
-En versiones previas, se utilizaba una tabla discreta `nn.Embedding(num_recursions + 8)`. Al entrenar con recursión fija $R_{\text{train}} = 2$, las filas $r \ge 2$ permanecían en su inicialización aleatoria $\mathcal{N}(0, 1)$, contaminando la inferencia en profundidades $R \in \{4, 8\}$.
+### 2.1. Novedades Principales de TRDM-v4
+* **Codificación Sinusoidal Continua de Profundidad ($\text{PE}(u_r)$):** Se eliminó la tabla discreta de embeddings (cuyas filas $r \ge 2$ permanecían en $\mathcal{N}(0, 1)$ al entrenar con $R_{\text{train}} = 2$). Se sustituyó por una coordenada normalizada continua $u_r = \frac{r+1}{R} \in (0, 1]$ con factores $\alpha_z, \beta_y$ amortiguados por $\frac{2}{R+1}$, garantizando que toda profundidad $R_{\text{infer}} \in \{1, 2, 4, 8\}$ evalúe únicamente parámetros regularizados y entrenados al 100%.
+* **Enrutamiento Expert-Choice Intra-Bloque con Exclusión de PAD:** La selección top-$k$ se confina al bloque de 16 tokens ($B_{\text{blk}} = 16$), garantizando causalidad hacia bloques pasados y evitando que tokens de relleno consuman la capacidad de cómputo de los expertos ternarios.
+* **Caché de Pesos Efectivos ($W_{\text{eff}}$) en Inferencia:** Las capas `BitLinear` congelan $W_{\text{eff}} = \gamma \cdot \text{RoundClip}(W / \gamma)$ al pasar a modo `eval()`, eliminando el re-cálculo de cuantización en cada pasada.
 
-En **TRDM-v4**, la tabla de embeddings se reemplazó por un codificador sinusoidal continuo sobre la coordenada normalizada:
-$$u_r = \frac{r+1}{R} \in (0, 1]$$
-Junto con escalas residuales compartidas $\alpha_z, \beta_y$ normalizadas por $\frac{2}{R+1}$, garantizando que toda profundidad $R_{\text{infer}} \in \{1, 2, 4, 8\}$ evalúe únicamente parámetros regularizados y entrenados al 100%.
+### 2.2. Registro de Decisiones de Arquitectura y Compromisos Técnicos (*Trade-Offs*)
 
-### 2.2. Enrutamiento Expert-Choice Intra-Bloque con Exclusión de PAD
-* La selección top-$k$ de tokens en el router MoE se confina rígidamente dentro de cada bloque de 16 tokens ($B_{\text{blk}} = 16$), impidiendo cualquier fuga causal hacia bloques futuros o invalidación de la caché KV.
-* Los tokens `PAD` se enmascaran antes del cálculo del router, evitando que consuman los cupos de capacidad de los expertos ternarios.
-
-### 2.3. Caché de Pesos Efectivos ($W_{\text{eff}}$) en Inferencia
-Para evitar penalizar artificialmente la latencia en benchmarks de CPU recalculando continuamente la cuantización durante el bucle de generación, las capas `BitLinear` cachean la matriz $W_{\text{eff}} = \gamma \cdot \text{RoundClip}(W / \gamma)$ al cambiar a modo `eval()`.
+| Decisión Arquitectónica | Justificación Técnica | Ventaja Obtenida | Límite / Coste Observado |
+| :--- | :--- | :--- | :--- |
+| **Cuantización W1.58A8 (BitNet)** | Minimizar huella de memoria para CPUs x86 de consumo sin GPU dedicada. | Reducción de **5.25×** en disco (673 KB total, 166 KB ternario) y 331 MB RAM. | Menor expresividad para converger en tareas de aritmética no lineal en pocas épocas. |
+| **Codificación Sinusoidal $\text{PE}(u_r)$** | Reemplazar tablas estáticas indexadas para permitir extrapolación continua a cualquier profundidad. | Inferencia en $R \in \{1, 2, 4, 8\}$ con parámetros 100% entrenados (cero pesos aleatorios). | Aumentar $R$ refina representaciones pero no puede sintetizar conceptos no aprendidos en Train. |
+| **Difusión Block-Causal (CDLM)** | Decodificación no autorregresiva por bloques con contexto bidireccional local. | Evita colapsos en bucle infinito repetitivo y reutiliza la caché KV de bloques pasados. | Requiere múltiples pasos de desruidado por bloque (~2.4× más lento en CPU que el baseline AR). |
+| **Router Expert-Choice Intra-Bloque** | Seleccionar top-$k$ tokens por experto confinados estrictamente al bloque activo. | Causalidad matemática estricta; los tokens futuros no invalidan la caché KV. | Capacidad fija que exige modulación dinámica $C_{\text{cap}}(t)$ según el nivel de ruido. |
+| **Exclusión de PAD en Router** | Impedir que los tokens de relleno saturen el cupo de los expertos ternarios. | Asignación íntegra de la capacidad de cómputo a tokens de texto útil. | Requiere computar máscaras de atención antes del enrutamiento. |
+| **Caché $W_{\text{eff}}$ en `eval()`** | Pre-calcular la matriz cuantizada $\gamma \cdot \text{RoundClip}(W/\gamma)$ al evaluar. | Elimina la sobrecarga de re-cuantización continua en bucles de inferencia en CPU. | Ocupa memoria flotante temporal durante la sesión de inferencia activa. |
 
 ---
 
@@ -83,9 +112,33 @@ Para someter a prueba la **Hipótesis H1** (*"un modelo recurrente con pesos com
 
 *Datos brutos completos exportados en [multi_seed_h1_results.json](file:///home/Miguel19x/Escritorio/Importante/Programación%20-%20General/Basic-Lite%200.1/multi_seed_h1_results.json).*
 
+<details>
+<summary><b>🔍 Haz clic aquí para ver ejemplos reales de inferencia y modos de fallo (sin necesidad de correr código)</b></summary>
+
+```text
+====================================================================================================
+CASO OOD 1: [nodo: sensor | carga: baja | perfil: eco | redundancia: simple]
+Valor Esperado Ground-Truth: watt: 13 | ms: 7
+----------------------------------------------------------------------------------------------------
+TRDM-v4 (R=1):  "wwtt: 11\nms: 9"     -> Error ortográfico en clave, dígitos incorrectos.
+TRDM-v4 (R=2):  "watt: 14\nms: 12"    -> Formato estructural corregido, valor numérico aproximado.
+TRDM-v4 (R=4):  "watt: 21\nms: 5"     -> Sintaxis y campos perfectos; error aritmético en interpolación.
+TRDM-v4 (R=8):  "watt: 21\nms: 6"     -> Salida estabilizada; no logra sintetizar la fórmula exacta.
+Baseline AR:    "watt: 18\nms: 8"      -> Formato perfecto (94%), predicción cercana pero errónea (OOD).
+====================================================================================================
+CASO OOD 2: [nodo: switch | carga: pico | perfil: turbo | redundancia: dual]
+Valor Esperado Ground-Truth: watt: 132 | ms: 11
+----------------------------------------------------------------------------------------------------
+TRDM-v4 (R=1):  "wattt: 98\n\nms: 3"  -> Desfase en delimitadores y saltos de línea.
+TRDM-v4 (R=4):  "watt: 110\nms: 14"   -> Estructura limpia; magnitud del orden correcto pero sin Exact Match.
+Baseline AR:    "watt: 125\nms: 9"     -> Alta fluidez sintáctica, fallo en generalización OOD multi-eje.
+====================================================================================================
+```
+</details>
+
 ---
 
-## 4. Análisis Científico y Conclusiones
+## 4. Análisis Científico, Aplicaciones y Limitaciones
 
 ### 4.1. Veredicto sobre la Hipótesis H1
 * **La Hipótesis H1 no se sostiene empíricamente para el razonamiento aritmético composicional:** En todas las configuraciones, el Exact Match numérico completo sobre el conjunto reservado Held-Out se mantuvo en **0.0%** ($p = 1.0000$ en la prueba de McNemar vs $R=2$).
@@ -100,6 +153,17 @@ Para someter a prueba la **Hipótesis H1** (*"un modelo recurrente con pesos com
 * **Huella en Disco y Memoria:**
   * El modelo TRDM-v4 empaquetado con BITCOSv2 ocupa **673.2 KiB** en disco (166.2 KiB ternario + 507.0 KiB FP32), representando una **reducción de 5.25×** frente a los 3,531.0 KiB del modelo en FP32 completo.
   * El consumo de memoria RAM en ejecución se mantiene en **~331 MiB**, haciéndolo completamente apto para dispositivos embebidos o CPUs de baja potencia.
+
+### 4.3. Ámbito de Aplicación: ¿Cuándo usar y cuándo NO usar esta arquitectura?
+
+#### ✅ Cuándo SÍ es adecuada esta arquitectura
+* **Dispositivos de Borde / Edge Computing:** Micro-servidores, CPUs x86/ARM de consumo modesto sin GPU dedicada con severas restricciones de almacenamiento (<1 MB libre) y memoria RAM (<512 MB).
+* **Generación y Extracción de Texto Estructurado:** Escenarios donde el formato sintáctico (pares clave-valor, JSONs compactos) deba generarse de manera acotada sin riesgo de bucles infinitos de repetición.
+* **Procesamiento de Secuencias Bidireccionales Locales:** Casos donde se requiera condicionamiento cruzado dentro de bloques prefijados sin re-computar la historia completa.
+
+#### ❌ Cuándo NO es adecuada esta arquitectura
+* **Cálculo Numérico Simbólico o Aritmética Exacta:** Problemas que requieran precisión matemática exacta sin un mecanismo explícito de cadena de pensamiento (*Chain-of-Thought*) o memoria de trabajo externa.
+* **Sistemas de Streaming con Latencia Crítica:** Si el objetivo fundamental es el tiempo al primer token (*Time-to-First-Token*), un Transformer autorregresivo clásico es ~2.4× más rápido en CPU al evaluar cada token una única vez.
 
 ---
 
