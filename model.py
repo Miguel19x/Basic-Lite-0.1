@@ -15,16 +15,33 @@ class RMSNorm(nn.Module):
         self.weight = nn.Parameter(torch.ones(dim))
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        norm_x = x * torch.rsqrt(x.pow(2).mean(-1, keepdim=True) + self.eps)
-        return norm_x * self.weight
+        return x * torch.rsqrt(x.pow(2).mean(-1, keepdim=True) + self.eps) * self.weight
+
+
+class SinusoidalStepEncoding(nn.Module):
+    """
+    Codificación sinusoidal continua y sin parámetros huérfanos para el progreso
+    recursivo normalizado u_r = (r + 1) / R en (0, 1].
+    Permite extrapolar a cualquier R_infer >= 1 usando únicamente pesos 100% entrenados.
+    """
+    def __init__(self, dim: int):
+        super().__init__()
+        half = dim // 2
+        freqs = torch.exp(torch.arange(half, dtype=torch.float32) * (-math.log(100.0) / max(1, half - 1)))
+        self.register_buffer("freqs", freqs, persistent=False)
+        self.proj = nn.Linear(dim, dim, bias=False)
+
+    def forward(self, u_norm: float, device: torch.device) -> torch.Tensor:
+        u = torch.tensor([u_norm * math.pi], dtype=torch.float32, device=device)
+        angles = u.unsqueeze(-1) * self.freqs.unsqueeze(0)
+        emb = torch.cat([angles.sin(), angles.cos()], dim=-1)
+        return self.proj(emb).view(1, 1, -1)
 
 
 class BitLinear(nn.Module):
     """
-    Capa BitLinear W1.58A8:
-    1. Entrenamiento QAT con STE sobre pesos latentes FP32.
-    2. Exportación e importación binaria BITCOSv2 (2 - z bits/peso).
-    3. Inferencia entera matricial y por descomposición de signos (+1, -1).
+    Capa BitLinear W1.58A8 con caché FP32 en eval() para benchmarks justos,
+    descomposición de suma/resta pura y exportación BITCOSv2.
     """
     def __init__(self, in_features: int, out_features: int, eps: float = 1e-6):
         super().__init__()
@@ -37,6 +54,9 @@ class BitLinear(nn.Module):
 
         self.register_buffer("int8_codes", torch.zeros(out_features, in_features, dtype=torch.int8), persistent=False)
         self.register_buffer("packed_scale", torch.tensor(1.0, dtype=torch.float32), persistent=False)
+        self.register_buffer("cached_w_eff", torch.empty(0), persistent=False)
+        self.register_buffer("cached_pos_mask", torch.empty(0), persistent=False)
+        self.register_buffer("cached_neg_mask", torch.empty(0), persistent=False)
         self.register_buffer("prev_codes", torch.zeros(out_features, in_features, dtype=torch.int8), persistent=False)
         self.use_loaded_bitcos: bool = False
         self.last_stats: Dict[str, float] = {}
@@ -47,61 +67,50 @@ class BitLinear(nn.Module):
         w_eff = self.weight + (scale_w * q_w - self.weight).detach()
         return w_eff, q_w.detach(), scale_w.detach()
 
-    def forward_add_sub_only(self, x_norm: torch.Tensor, scale_x: torch.Tensor) -> torch.Tensor:
-        """Suma/resta pura descomponiendo los códigos ternarios en máscaras booleanas."""
-        q_max = 127.0
-        q_x = torch.clamp(torch.round(x_norm * (q_max / scale_x)), -q_max, q_max)
-        codes = self.int8_codes if self.use_loaded_bitcos else self.quantize_weights()[1].to(torch.int8)
-        s_w = self.packed_scale if self.use_loaded_bitcos else self.quantize_weights()[2]
-
-        pos_mask = (codes == 1).to(q_x.dtype)
-        neg_mask = (codes == -1).to(q_x.dtype)
-        acc = F.linear(q_x, pos_mask) - F.linear(q_x, neg_mask)
-        return acc * ((scale_x / q_max) * s_w)
-
-    def forward_kernel_add_sub(self, x_norm: torch.Tensor, scale_x: torch.Tensor) -> torch.Tensor:
-        """Suma/resta pura ejecutada por kernel C con AVX2/OpenMP sin multiplicaciones."""
-        from ternary_cpu_kernel import ternary_addsub_matmul
-        q_max = 127.0
-        q_x_i8 = torch.clamp(torch.round(x_norm * (q_max / scale_x)), -q_max, q_max).to(torch.int8)
-        codes = self.int8_codes if self.use_loaded_bitcos else self.quantize_weights()[1].to(torch.int8)
-        s_w = self.packed_scale if self.use_loaded_bitcos else self.quantize_weights()[2]
-        acc_int32 = ternary_addsub_matmul(q_x_i8, codes)
-        rescale = (scale_x / q_max) * s_w
-        return acc_int32.to(x_norm.dtype) * rescale
+    @torch.no_grad()
+    def refresh_eval_cache(self) -> None:
+        """Precalcula W_eff y máscaras de signo una sola vez al pasar a eval()."""
+        w_eff, q_w, scale_w = self.quantize_weights()
+        self.cached_w_eff = w_eff.detach().clone()
+        self.int8_codes.copy_(q_w.to(torch.int8))
+        self.packed_scale.fill_(float(scale_w.item()))
+        self.cached_pos_mask = (self.int8_codes == 1).to(torch.float32)
+        self.cached_neg_mask = (self.int8_codes == -1).to(torch.float32)
 
     def forward(
         self,
         x: torch.Tensor,
         record_telemetry: bool = False,
         integer_mode: bool = False,
-        add_sub_only: bool = False,
-        use_kernel: bool = False,
+        add_sub_mode: bool = False,
     ) -> torch.Tensor:
         x_norm = self.sub_ln(x)
         q_max = 127.0
         scale_x = x_norm.abs().amax(dim=-1, keepdim=True).clamp(min=self.eps)
 
-        if use_kernel and not self.training:
-            return self.forward_kernel_add_sub(x_norm, scale_x)
+        if not self.training:
+            q_x = torch.clamp(torch.round(x_norm * (q_max / scale_x)), -q_max, q_max)
+            if add_sub_mode:
+                if self.cached_pos_mask.numel() == 0:
+                    self.refresh_eval_cache()
+                acc = F.linear(q_x, self.cached_pos_mask) - F.linear(q_x, self.cached_neg_mask)
+                return acc * ((scale_x / q_max) * self.packed_scale)
 
-        if add_sub_only and not self.training:
-            return self.forward_add_sub_only(x_norm, scale_x)
-
-        if (integer_mode or self.use_loaded_bitcos) and not self.training:
-            q_x_int = torch.clamp(torch.round(x_norm * (q_max / scale_x)), -q_max, q_max).to(torch.int32)
-            if self.use_loaded_bitcos:
+            if integer_mode or self.use_loaded_bitcos:
+                q_x_int = q_x.to(torch.int32)
                 w_codes_int = self.int8_codes.to(torch.int32)
-                s_w = self.packed_scale
-            else:
-                _, q_w, s_w = self.quantize_weights()
-                w_codes_int = q_w.to(torch.int32)
+                acc_int32 = torch.matmul(q_x_int, w_codes_int.t())
+                return acc_int32.to(x.dtype) * ((scale_x / q_max) * self.packed_scale)
 
-            acc_int32 = torch.matmul(q_x_int, w_codes_int.t())
-            rescale = (scale_x / q_max) * s_w
-            return acc_int32.to(x.dtype) * rescale
+            if self.cached_w_eff.numel() == 0:
+                self.refresh_eval_cache()
+            x_eff = q_x * (scale_x / q_max)
+            return F.linear(x_eff, self.cached_w_eff, bias=None)
 
-        # QAT con STE para entrenamiento
+        # Ruta de entrenamiento QAT con STE (invalida caché de evaluación)
+        if self.cached_w_eff.numel() > 0:
+            self.cached_w_eff = torch.empty(0, device=x.device)
+
         q_x = torch.clamp(torch.round(x_norm * (q_max / scale_x)), -q_max, q_max)
         x_eff = x_norm + (q_x * (scale_x / q_max) - x_norm).detach()
         w_eff, q_w, scale_w = self.quantize_weights()
@@ -169,13 +178,15 @@ class BitLinear(nn.Module):
 
         self.int8_codes.copy_(torch.from_numpy(reconstructed.reshape(out_f, in_f)))
         self.packed_scale.fill_(scale_val)
+        self.cached_w_eff = self.int8_codes.to(torch.float32) * scale_val
+        self.cached_pos_mask = (self.int8_codes == 1).to(torch.float32)
+        self.cached_neg_mask = (self.int8_codes == -1).to(torch.float32)
         self.use_loaded_bitcos = True
         return offset
 
 
 class RotaryEmbedding(nn.Module):
-    """Posiciones rotatorias puras (RoPE) sin incrustación posicional absoluta redundante."""
-    def __init__(self, dim: int, max_seq_len: int = 256):
+    def __init__(self, dim: int, max_seq_len: int = 128):
         super().__init__()
         inv_freq = 1.0 / (10000 ** (torch.arange(0, dim, 2).float() / dim))
         t = torch.arange(max_seq_len).float()
@@ -199,7 +210,7 @@ class RotaryEmbedding(nn.Module):
 def build_block_causal_mask(seq_len: int, block_size: int, device: torch.device) -> torch.Tensor:
     idx = torch.arange(seq_len, device=device)
     block_id = idx // block_size
-    allowed = block_id.unsqueeze(0) <= block_id.unsqueeze(1)  # [L, L]
+    allowed = block_id.unsqueeze(0) <= block_id.unsqueeze(1)
     return allowed.unsqueeze(0).unsqueeze(0)
 
 
@@ -217,7 +228,7 @@ class BlockCausalGQATernaryAttention(nn.Module):
         self.k_proj = BitLinear(cfg.d_model, self.kv_dim, eps=cfg.eps)
         self.v_proj = BitLinear(cfg.d_model, self.kv_dim, eps=cfg.eps)
         self.o_proj = BitLinear(cfg.d_model, cfg.d_model, eps=cfg.eps)
-        self.rope = RotaryEmbedding(self.head_dim, 256)
+        self.rope = RotaryEmbedding(self.head_dim, cfg.max_seq_len)
 
     def _repeat_kv(self, x: torch.Tensor) -> torch.Tensor:
         if self.num_queries_per_kv == 1:
@@ -236,11 +247,12 @@ class BlockCausalGQATernaryAttention(nn.Module):
         start_pos: int = 0,
         record_telemetry: bool = False,
         integer_mode: bool = False,
+        add_sub_mode: bool = False,
     ) -> Tuple[torch.Tensor, Tuple[torch.Tensor, torch.Tensor]]:
         B, L, D = x.shape
-        q = self.q_proj(x, record_telemetry, integer_mode).view(B, L, self.n_heads, self.head_dim).transpose(1, 2)
-        k = self.k_proj(x, record_telemetry, integer_mode).view(B, L, self.n_kv_heads, self.head_dim).transpose(1, 2)
-        v = self.v_proj(x, record_telemetry, integer_mode).view(B, L, self.n_kv_heads, self.head_dim).transpose(1, 2)
+        q = self.q_proj(x, record_telemetry, integer_mode, add_sub_mode).view(B, L, self.n_heads, self.head_dim).transpose(1, 2)
+        k = self.k_proj(x, record_telemetry, integer_mode, add_sub_mode).view(B, L, self.n_kv_heads, self.head_dim).transpose(1, 2)
+        v = self.v_proj(x, record_telemetry, integer_mode, add_sub_mode).view(B, L, self.n_kv_heads, self.head_dim).transpose(1, 2)
 
         q = self.rope.apply_rope(q, start_pos=start_pos)
         k = self.rope.apply_rope(k, start_pos=start_pos)
@@ -262,7 +274,7 @@ class BlockCausalGQATernaryAttention(nn.Module):
             attn_out = F.scaled_dot_product_attention(q, k_exp, v_exp, attn_mask=attn_mask)
 
         attn_out = attn_out.transpose(1, 2).contiguous().view(B, L, D)
-        out = self.o_proj(attn_out, record_telemetry, integer_mode)
+        out = self.o_proj(attn_out, record_telemetry, integer_mode, add_sub_mode)
         return out, (k_full, v_full)
 
 
@@ -272,18 +284,21 @@ class TernaryExpert(nn.Module):
         self.up = BitLinear(d_model, d_ff, eps=eps)
         self.down = BitLinear(d_ff, d_model, eps=eps)
 
-    def forward(self, x: torch.Tensor, record_telemetry: bool = False, integer_mode: bool = False) -> torch.Tensor:
-        h = F.relu(self.up(x, record_telemetry, integer_mode)).square()
-        return self.down(h, record_telemetry, integer_mode)
+    def forward(
+        self,
+        x: torch.Tensor,
+        record_telemetry: bool = False,
+        integer_mode: bool = False,
+        add_sub_mode: bool = False,
+    ) -> torch.Tensor:
+        h = F.relu(self.up(x, record_telemetry, integer_mode, add_sub_mode)).square()
+        return self.down(h, record_telemetry, integer_mode, add_sub_mode)
 
 
 class ExpertChoiceMoE(nn.Module):
     """
-    Enrutamiento Expert-Choice estrictamente intra-bloque:
-    1. Las decisiones de asignación top-k se computan localmente dentro de cada bloque de tamaño B_blk.
-       Esto garantiza 100% la causalidad por bloques y la validez perpetua de la caché KV.
-    2. Los tokens de relleno PAD se excluyen del cómputo para que jamás roben cupo a los expertos.
-    3. La capacidad escala adaptativamente con el nivel de ruido t (C_cap(t)).
+    Enrutamiento Expert-Choice estrictamente intra-bloque (sin fuga causal entre bloques)
+    y con enmascaramiento de tokens PAD.
     """
     def __init__(self, cfg: HybridConfig):
         super().__init__()
@@ -301,85 +316,56 @@ class ExpertChoiceMoE(nn.Module):
         self,
         x: torch.Tensor,
         t_noise: torch.Tensor,
+        non_pad_mask: Optional[torch.Tensor] = None,
         active_mask: Optional[torch.Tensor] = None,
-        is_pad_mask: Optional[torch.Tensor] = None,
         record_telemetry: bool = False,
         integer_mode: bool = False,
+        add_sub_mode: bool = False,
     ) -> torch.Tensor:
         B, L, D = x.shape
-        B_blk = self.block_size
-
-        # Si L > B_blk, dividimos en sub-bloques para enrutar estrictamente intra-bloque
-        num_blocks = math.ceil(L / B_blk)
-        x_blocks = []
-        pad_blocks = []
-        active_blocks = []
-
-        for b_idx in range(num_blocks):
-            s_idx = b_idx * B_blk
-            e_idx = min((b_idx + 1) * B_blk, L)
-            x_blocks.append(x[:, s_idx:e_idx, :])
-            if is_pad_mask is not None:
-                pad_blocks.append(is_pad_mask[:, s_idx:e_idx])
-            else:
-                pad_blocks.append(None)
-            if active_mask is not None:
-                active_blocks.append(active_mask[:, s_idx:e_idx, :])
-            else:
-                active_blocks.append(None)
-
-        out_blocks = []
-        total_counts = [0] * self.num_experts
+        B_blk = min(self.block_size, L)
+        num_blocks = L // B_blk
 
         mean_t = float(t_noise.mean().item())
-        dynamic_factor = self.capacity_factor * (1.35 - 0.70 * mean_t)
+        dynamic_factor = self.capacity_factor * (1.25 - 0.50 * mean_t)
+        k = max(1, min(B_blk, int(round((B_blk * dynamic_factor) / self.num_experts))))
 
-        for b_idx in range(num_blocks):
-            xb = x_blocks[b_idx]
-            L_b = xb.size(1)
-            k_b = max(1, min(L_b, int(round((L_b * dynamic_factor) / self.num_experts))))
+        x_blk = x.view(B * num_blocks, B_blk, D)
+        router_logits = self.router(x_blk)
+        scores = F.softmax(router_logits, dim=-1)
 
-            router_logits = self.router(xb)
-            scores = F.softmax(router_logits, dim=-1)
+        if active_mask is not None:
+            act_blk = active_mask.view(B * num_blocks, B_blk, 1)
+            scores = scores * (0.10 + 0.90 * act_blk)
 
-            # Excluir tokens PAD para que no consuman cupos de los expertos
-            if pad_blocks[b_idx] is not None:
-                non_pad_weight = (~pad_blocks[b_idx]).float().unsqueeze(-1)
-                scores = scores * non_pad_weight
+        if non_pad_mask is not None:
+            valid_blk = non_pad_mask.view(B * num_blocks, B_blk, 1).float()
+            scores = scores * valid_blk
 
-            # Modular por tokens aún activos en la recursión
-            if active_blocks[b_idx] is not None:
-                scores = scores * (0.05 + 0.95 * active_blocks[b_idx])
+        scores_t = scores.transpose(1, 2)  # [B*num_blocks, E, B_blk]
+        top_gating, top_indices = torch.topk(scores_t, k=k, dim=-1)
 
-            scores = scores.transpose(1, 2)  # [B, E, L_b]
-            top_gating, top_indices = torch.topk(scores, k=k_b, dim=-1)
+        out_blk = torch.zeros_like(x_blk)
+        counts = [0] * self.num_experts
 
-            out_b = torch.zeros_like(xb)
-            for e_idx, expert in enumerate(self.experts):
-                idx_e = top_indices[:, e_idx, :]
-                gate_e = top_gating[:, e_idx, :].unsqueeze(-1)
-                gather_idx = idx_e.unsqueeze(-1).expand(-1, -1, D)
-                selected = torch.gather(xb, dim=1, index=gather_idx)
-
-                expert_out = expert(selected, record_telemetry, integer_mode) * gate_e
-                out_b.scatter_add_(dim=1, index=gather_idx, src=expert_out)
-                total_counts[e_idx] += int(B * k_b)
-
-            out_blocks.append(out_b)
+        for e_idx, expert in enumerate(self.experts):
+            idx_e = top_indices[:, e_idx, :]
+            gate_e = top_gating[:, e_idx, :].unsqueeze(-1)
+            gather_idx = idx_e.unsqueeze(-1).expand(-1, -1, D)
+            selected = torch.gather(x_blk, dim=1, index=gather_idx)
+            expert_out = expert(selected, record_telemetry, integer_mode, add_sub_mode) * gate_e
+            out_blk.scatter_add_(dim=1, index=gather_idx, src=expert_out)
+            counts[e_idx] = int(B * num_blocks * k)
 
         if record_telemetry:
-            self.last_expert_token_counts = total_counts
-
-        return torch.cat(out_blocks, dim=1)
+            self.last_expert_token_counts = counts
+        return out_blk.view(B, L, D)
 
 
 class SharedDualStateRecursiveCore(nn.Module):
     """
-    Núcleo recurrente TRM/TRLM:
-    - z_r: razonamiento latente profundo -> z_{r+1} = f_theta(a, y_r, z_r)
-    - y_r: propuesta de respuesta tentativa -> y_{r+1} = g_theta(y_r, z_{r+1})
-    - carry_gate: compuerta aprendible para transferir memoria entre rondas externas
-    - noise_mlp: condicionamiento conjunto por (t, delta_t)
+    Núcleo recurrente TRM/TRLM con codificación sinusoidal continua de profundidad u_r = (r+1)/R
+    y escalas residuales compartidas (sin parámetros dependientes de un índice r máximo fijo).
     """
     def __init__(self, cfg: HybridConfig):
         super().__init__()
@@ -391,25 +377,31 @@ class SharedDualStateRecursiveCore(nn.Module):
         self.anchor_proj = BitLinear(cfg.d_model, cfg.d_model, eps=cfg.eps)
         self.attn = BlockCausalGQATernaryAttention(cfg)
         self.moe = ExpertChoiceMoE(cfg)
-
         self.answer_updater = BitLinear(cfg.d_model, cfg.d_model, eps=cfg.eps)
+
         self.halt_gate = nn.Linear(cfg.d_model, 1)
         nn.init.constant_(self.halt_gate.bias, -1.5)
 
-        self.recursion_emb = nn.Embedding(cfg.num_recursions + 8, cfg.d_model)
+        # Codificador continuo de progreso recursivo u_r = (r + 1) / R
+        self.step_encoder = SinusoidalStepEncoding(cfg.d_model)
         self.noise_mlp = nn.Sequential(
             nn.Linear(2, cfg.d_model),
             nn.SiLU(),
             nn.Linear(cfg.d_model, cfg.d_model),
         )
-        self.carry_gate = nn.Parameter(torch.tensor(0.5))
-        self.alpha_z = nn.Parameter(torch.full((cfg.num_recursions + 8,), 0.5))
-        self.beta_y = nn.Parameter(torch.full((cfg.num_recursions + 8,), 0.5))
+        # Escalas residuales compartidas entre todos los pasos r (100% entrenadas siempre)
+        self.alpha_z = nn.Parameter(torch.tensor(0.60))
+        self.beta_y = nn.Parameter(torch.tensor(0.60))
+        self.carry_gate = nn.Parameter(torch.tensor(0.0))
 
     def precompute_anchor(
-        self, a: torch.Tensor, record_telemetry: bool = False, integer_mode: bool = False
+        self,
+        a: torch.Tensor,
+        record_telemetry: bool = False,
+        integer_mode: bool = False,
+        add_sub_mode: bool = False,
     ) -> torch.Tensor:
-        return self.anchor_proj(a, record_telemetry, integer_mode)
+        return self.anchor_proj(a, record_telemetry, integer_mode, add_sub_mode)
 
     def forward(
         self,
@@ -419,26 +411,23 @@ class SharedDualStateRecursiveCore(nn.Module):
         t_noise: torch.Tensor,
         delta_t: torch.Tensor,
         r_step: int,
+        total_recursions: int,
+        non_pad_mask: Optional[torch.Tensor],
         active_mask: torch.Tensor,
-        is_pad_mask: Optional[torch.Tensor] = None,
         kv_cache: Optional[Tuple[torch.Tensor, torch.Tensor]] = None,
         start_pos: int = 0,
         record_telemetry: bool = False,
         integer_mode: bool = False,
+        add_sub_mode: bool = False,
     ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor, Tuple[torch.Tensor, torch.Tensor]]:
-        t_in = t_noise.view(-1, 1)
-        dt_in = delta_t.view(-1, 1)
-        if t_in.size(0) != z_r.size(0):
-            t_in = t_in.expand(z_r.size(0), -1)
-        if dt_in.size(0) != z_r.size(0):
-            dt_in = dt_in.expand(z_r.size(0), -1)
-        t_dt_feat = torch.cat([t_in, dt_in], dim=-1)
-        e_t = self.noise_mlp(t_dt_feat).unsqueeze(1)
+        noise_pair = torch.stack([t_noise, delta_t], dim=-1)
+        e_t = self.noise_mlp(noise_pair).unsqueeze(1)
 
-        r_idx = torch.tensor(r_step, device=z_r.device)
-        e_r = self.recursion_emb(r_idx).view(1, 1, -1)
+        # Progreso normalizado en (0, 1] y amortiguación de paso 2 / (R + 1) para estabilidad en R > R_train
+        u_norm = float(r_step + 1) / float(max(1, total_recursions))
+        step_scale = 2.0 / float(max(2, total_recursions))
+        e_r = self.step_encoder(u_norm, z_r.device)
 
-        # 1. Razonamiento latente z_{r+1}
         joint_state = self.norm_z(z_r) + self.norm_y(y_r) + anchor_feat + e_t + e_r
         attn_out, new_kv_cache = self.attn(
             joint_state,
@@ -446,36 +435,32 @@ class SharedDualStateRecursiveCore(nn.Module):
             start_pos=start_pos,
             record_telemetry=record_telemetry,
             integer_mode=integer_mode,
+            add_sub_mode=add_sub_mode,
         )
-        z_mid = z_r + active_mask * self.alpha_z[r_step] * attn_out
+        eff_alpha = self.alpha_z * step_scale
+        eff_beta = self.beta_y * step_scale
+
+        z_mid = z_r + active_mask * eff_alpha * attn_out
         moe_out = self.moe(
             self.norm_moe(z_mid),
             t_noise=t_noise,
+            non_pad_mask=non_pad_mask,
             active_mask=active_mask,
-            is_pad_mask=is_pad_mask,
             record_telemetry=record_telemetry,
             integer_mode=integer_mode,
+            add_sub_mode=add_sub_mode,
         )
-        z_next = z_mid + active_mask * self.alpha_z[r_step] * moe_out
+        z_next = z_mid + active_mask * eff_alpha * moe_out
 
-        # 2. Propuesta de respuesta y_{r+1}
         fusion_yz = self.norm_refine(y_r + z_next)
-        delta_y = self.answer_updater(fusion_yz, record_telemetry, integer_mode)
-        y_next = y_r + active_mask * self.beta_y[r_step] * F.silu(delta_y)
+        delta_y = self.answer_updater(fusion_yz, record_telemetry, integer_mode, add_sub_mode)
+        y_next = y_r + active_mask * eff_beta * F.silu(delta_y)
 
-        # 3. Parada por token
         halt_prob = torch.sigmoid(self.halt_gate(self.norm_refine(z_next + y_next)))
         return z_next, y_next, halt_prob, new_kv_cache
 
 
 class TernaryRecursiveDiffusionLM(nn.Module):
-    """
-    Arquitectura TRDM-v3 Saneada:
-    - Pure RoPE (sin incrustación posicional absoluta redundante).
-    - MoE intra-bloque estricto (causalidad perfecta y caché KV invariante).
-    - Transporte latente (z_R, y_R) desconectado vía carry_gate.
-    - Condicionamiento conjunto (t, delta_t) y parada adaptativa MoR.
-    """
     def __init__(self, cfg: HybridConfig):
         super().__init__()
         self.cfg = cfg
@@ -488,6 +473,13 @@ class TernaryRecursiveDiffusionLM(nn.Module):
         self.last_recursion_deltas: List[float] = []
         self.last_active_token_ratios: List[float] = []
 
+    def prepare_for_eval(self) -> None:
+        """Congela los pesos efectivos cuantizados en caché al entrar en modo evaluación."""
+        self.eval()
+        for m in self.modules():
+            if isinstance(m, BitLinear):
+                m.refresh_eval_cache()
+
     def forward(
         self,
         x_t: torch.Tensor,
@@ -498,21 +490,18 @@ class TernaryRecursiveDiffusionLM(nn.Module):
         kv_caches_per_r: Optional[List[Tuple[torch.Tensor, torch.Tensor]]] = None,
         start_pos: int = 0,
         record_telemetry: bool = False,
-    ) -> Tuple[torch.Tensor, List[torch.Tensor], List[torch.Tensor], List[Tuple[torch.Tensor, torch.Tensor]], Tuple[torch.Tensor, torch.Tensor]]:
+    ):
         B, L = x_t.shape
         R = num_recursions if num_recursions is not None else self.cfg.num_recursions
-        integer_mode = (not self.training) and self.cfg.use_integer_inference
+        int_mode = (not self.training) and self.cfg.use_integer_inference
+        add_sub = (not self.training) and self.cfg.use_add_sub_inference
 
         if delta_t is None:
             delta_t = torch.full_like(t_noise, 1.0 / max(1, self.cfg.diffusion_steps_per_block))
 
-        # Posiciones puras con RoPE (eliminada la incrustación absoluta redundante)
+        non_pad_mask = (x_t != self.cfg.pad_token_id)
         a = self.token_emb(x_t)
 
-        # Identificar tokens PAD para excluirlos de los cupos de expertos MoE
-        is_pad_mask = (x_t == self.cfg.pad_token_id)
-
-        # Transporte latente entre rondas de difusión (TRM / TRLM)
         if prev_states is not None:
             prev_z, prev_y = prev_states
             g = torch.sigmoid(self.shared_core.carry_gate)
@@ -523,7 +512,7 @@ class TernaryRecursiveDiffusionLM(nn.Module):
             y_r = torch.zeros_like(a)
 
         anchor_feat = self.shared_core.precompute_anchor(
-            a, record_telemetry=record_telemetry, integer_mode=integer_mode
+            a, record_telemetry=record_telemetry, integer_mode=int_mode, add_sub_mode=add_sub
         )
 
         cum_halt = torch.zeros(B, L, 1, device=x_t.device)
@@ -536,29 +525,15 @@ class TernaryRecursiveDiffusionLM(nn.Module):
         active_ratios: List[float] = []
 
         for r in range(R):
-            if kv_caches_per_r is not None and len(kv_caches_per_r) > 0:
-                cache_r = kv_caches_per_r[r] if r < len(kv_caches_per_r) else kv_caches_per_r[-1]
-            else:
-                cache_r = None
-            use_nograd = self.training and (r < self.cfg.nograd_recursions)
-
-            if use_nograd:
-                with torch.no_grad():
-                    z_next, y_next, h_prob, updated_kv = self.shared_core(
-                        z_r, y_r, anchor_feat, t_noise, delta_t, r, active_mask,
-                        is_pad_mask=is_pad_mask, kv_cache=cache_r, start_pos=start_pos,
-                        record_telemetry=False, integer_mode=integer_mode
-                    )
-                z_next, y_next, h_prob = z_next.detach(), y_next.detach(), h_prob.detach()
-            else:
-                z_next, y_next, h_prob, updated_kv = self.shared_core(
-                    z_r, y_r, anchor_feat, t_noise, delta_t, r, active_mask,
-                    is_pad_mask=is_pad_mask,
-                    kv_cache=cache_r,
-                    start_pos=start_pos,
-                    record_telemetry=(record_telemetry and r == R - 1),
-                    integer_mode=integer_mode,
-                )
+            cache_r = kv_caches_per_r[r] if (kv_caches_per_r is not None and r < len(kv_caches_per_r)) else None
+            z_next, y_next, h_prob, updated_kv = self.shared_core(
+                z_r, y_r, anchor_feat, t_noise, delta_t, r, R, non_pad_mask, active_mask,
+                kv_cache=cache_r,
+                start_pos=start_pos,
+                record_telemetry=(record_telemetry and r == R - 1),
+                integer_mode=int_mode,
+                add_sub_mode=add_sub,
+            )
 
             new_kv_caches.append(updated_kv)
             halt_probs_list.append(h_prob)
@@ -570,28 +545,15 @@ class TernaryRecursiveDiffusionLM(nn.Module):
                     active_ratios.append(float((active_mask > 0.1).float().mean().item()))
 
             z_r, y_r = z_next, y_next
-
             cum_halt = (cum_halt + h_prob * active_mask).clamp(max=1.0)
-            if self.training:
-                active_mask = 1.0 - cum_halt * 0.7
-            else:
-                active_mask = (cum_halt < self.cfg.halt_threshold).float()
-                if active_mask.sum() == 0 and not record_telemetry:
-                    logits_r = self.lm_head(self.final_norm(y_r))
-                    intermediate_logits.append(logits_r)
-                    break
+            active_mask = 1.0 - cum_halt * 0.5 if self.training else (cum_halt < self.cfg.halt_threshold).float()
 
-            if self.training or record_telemetry or r == R - 1:
-                logits_r = self.lm_head(self.final_norm(y_r))
-                intermediate_logits.append(logits_r)
+            logits_r = self.lm_head(self.final_norm(y_r))
+            intermediate_logits.append(logits_r)
 
         if record_telemetry:
             self.last_recursion_deltas = deltas
             self.last_active_token_ratios = active_ratios
-
-        if len(new_kv_caches) < R and len(new_kv_caches) > 0:
-            while len(new_kv_caches) < R:
-                new_kv_caches.append(new_kv_caches[-1])
 
         final_logits = intermediate_logits[-1]
         carried_states = (z_r.detach(), y_r.detach())
@@ -602,7 +564,7 @@ class TernaryRecursiveDiffusionLM(nn.Module):
         for name, param in self.named_parameters():
             if not param.requires_grad:
                 continue
-            if param.ndim < 2 or "emb" in name or "norm" in name or "alpha" in name or "beta" in name or "halt" in name or "carry" in name:
+            if param.ndim < 2 or "emb" in name or "norm" in name or "alpha" in name or "beta" in name or "gate" in name:
                 no_decay.append(param)
             else:
                 decay.append(param)
@@ -633,7 +595,7 @@ class TernaryRecursiveDiffusionLM(nn.Module):
     def load_bitcos_archive(self, path: str) -> int:
         with open(path, "rb") as f:
             blob = f.read()
-        assert blob[:8] == b"BITCOSv2", "Formato de archivo BITCOS inválido"
+        assert blob[:8] == b"BITCOSv2", "Formato BITCOS inválido"
         offset = 8
         modules_dict = dict(self.named_modules())
         loaded_layers = 0
@@ -646,5 +608,4 @@ class TernaryRecursiveDiffusionLM(nn.Module):
             assert isinstance(mod, BitLinear)
             offset = mod.load_from_bitcos_bytes(blob, offset)
             loaded_layers += 1
-        self.cfg.use_integer_inference = True
         return loaded_layers

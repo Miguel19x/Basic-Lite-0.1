@@ -1,23 +1,12 @@
 import math
-import os
-from typing import List, Tuple
+import time
+from typing import Dict, List, Tuple
 import torch
 import torch.nn.functional as F
 
 from config import HybridConfig
 from model import TernaryRecursiveDiffusionLM
-from data import ProceduralCompositionalDataset
-
-
-def decode_tokens_clean(tokens: List[int], cfg: HybridConfig) -> str:
-    """Decodificación limpia por bytes UTF-8 sin truncamientos heurísticos de texto."""
-    byte_seq = []
-    for tok in tokens:
-        if tok in (cfg.eos_token_id, cfg.pad_token_id):
-            break
-        if tok < 256:
-            byte_seq.append(tok)
-    return bytes(byte_seq).decode("utf-8", errors="replace")
+from data import ProceduralCompositionalDataset, parse_watt_ms_prediction
 
 
 @torch.no_grad()
@@ -26,30 +15,22 @@ def generate_block_causal_with_kv_cache(
     prompt_text: str,
     cfg: HybridConfig,
     gen_length: int = 24,
-    num_recursions: int = None,
+    num_recursions_override: int = None,
 ) -> Tuple[str, List[str], int]:
-    """
-    Generador Block-Causal TRDM-v3 Saneado:
-    1. Procesa bloques del prompt y congela K, V en la caché.
-    2. En el bloque activo, aplica difusión con Reconsideración de Tokens (Remasking).
-    3. Transporta el estado latente (z_R, y_R) desconectado entre pasos.
-    4. Detención natural en cuanto se consolida [EOS] o [PAD] (sin heurísticas de texto).
-    """
     model.eval()
-    R = num_recursions if num_recursions is not None else cfg.num_recursions
+    R_infer = num_recursions_override if num_recursions_override is not None else cfg.num_recursions
     prompt_bytes = list(prompt_text.encode("utf-8"))
 
-    # Secuencia inicial: prompt + posiciones [MASK] alineadas a múltiplos de bloque
-    prompt_len = 1 + len(prompt_bytes)
-    needed_len = prompt_len + gen_length
-    total_len = min(cfg.max_seq_len, math.ceil(needed_len / cfg.block_size) * cfg.block_size)
-    num_masks = max(1, total_len - prompt_len)
-    seq = [cfg.bos_token_id] + prompt_bytes + [cfg.mask_token_id] * num_masks
-    seq = seq[:total_len]
-
-    x_full = torch.tensor([seq], dtype=torch.long, device=cfg.device)
+    seq = [cfg.bos_token_id] + prompt_bytes + [cfg.mask_token_id] * gen_length
+    seq = seq[: cfg.max_seq_len]
     B_blk = cfg.block_size
-    num_blocks = math.ceil(total_len / B_blk)
+    if len(seq) % B_blk != 0:
+        pad_to_blk = B_blk - (len(seq) % B_blk)
+        seq = (seq + [cfg.mask_token_id] * pad_to_blk)[: cfg.max_seq_len]
+
+    total_len = len(seq)
+    x_full = torch.tensor([seq], dtype=torch.long, device=cfg.device)
+    num_blocks = total_len // B_blk
 
     kv_caches_committed = None
     committed_len = 0
@@ -58,10 +39,9 @@ def generate_block_causal_with_kv_cache(
 
     for b_idx in range(num_blocks):
         b_start = b_idx * B_blk
-        b_end = min((b_idx + 1) * B_blk, total_len)
-        block_tokens = x_full[:, b_start:b_end]
+        b_end = (b_idx + 1) * B_blk
+        block_tokens = x_full[:, b_start:b_end].clone()
 
-        # Bloque del prompt sin máscaras: consolidamos su caché KV una única vez
         if not (block_tokens == cfg.mask_token_id).any():
             t_zero = torch.tensor([0.0], device=cfg.device)
             dt_zero = torch.tensor([0.0], device=cfg.device)
@@ -69,20 +49,19 @@ def generate_block_causal_with_kv_cache(
                 block_tokens,
                 t_zero,
                 delta_t=dt_zero,
-                num_recursions=R,
+                num_recursions=R_infer,
                 kv_caches_per_r=kv_caches_committed,
                 start_pos=committed_len,
             )
             committed_len = b_end
-            total_block_evals += 1
+            total_block_evals += R_infer
             continue
 
-        # Bloque activo con máscaras
+        steps = cfg.diffusion_steps_per_block
         editable_positions = (block_tokens[0] == cfg.mask_token_id).clone()
-        initial_masks_in_block = int(editable_positions.sum().item())
+        initial_masks = int(editable_positions.sum().item())
         carried_states = None
         prev_ratio = 1.0
-        steps = cfg.diffusion_steps_per_block
 
         for s_idx in range(steps):
             mask_pos = (block_tokens[0] == cfg.mask_token_id)
@@ -90,9 +69,9 @@ def generate_block_causal_with_kv_cache(
             if num_masked == 0:
                 break
 
-            mask_ratio = num_masked / max(1, initial_masks_in_block)
+            mask_ratio = num_masked / max(1, initial_masks)
             t_tensor = torch.tensor([mask_ratio], device=cfg.device)
-            dt_tensor = torch.tensor([max(0.0, prev_ratio - mask_ratio)], device=cfg.device)
+            dt_tensor = torch.tensor([max(0.01, prev_ratio - mask_ratio)], device=cfg.device)
             prev_ratio = mask_ratio
 
             logits, inter_logits, _, _, carried_states = model(
@@ -100,7 +79,7 @@ def generate_block_causal_with_kv_cache(
                 t_tensor,
                 delta_t=dt_tensor,
                 prev_states=carried_states,
-                num_recursions=R,
+                num_recursions=R_infer,
                 kv_caches_per_r=kv_caches_committed,
                 start_pos=committed_len,
             )
@@ -111,12 +90,11 @@ def generate_block_causal_with_kv_cache(
             probs = F.softmax(logits[0], dim=-1)
             confidences, best_tokens = probs.max(dim=-1)
 
-            # Reconsideración de Tokens (Remasking de baja confianza)
             edit_indices = torch.nonzero(editable_positions, as_tuple=False).squeeze(-1)
             block_tokens[0, edit_indices] = best_tokens[edit_indices]
 
             progress = (s_idx + 1) / steps
-            target_rem = int(math.floor(initial_masks_in_block * math.cos(progress * math.pi / 2.0)))
+            target_rem = int(math.floor(initial_masks * math.cos(progress * math.pi / 2.0)))
             if s_idx < steps - 1 and target_rem > 0:
                 edit_conf = confidences[edit_indices]
                 _, lowest_order = torch.topk(edit_conf, k=min(target_rem, len(edit_indices)), largest=False)
@@ -125,108 +103,81 @@ def generate_block_causal_with_kv_cache(
 
             x_full[:, b_start:b_end] = block_tokens
 
-            # Historial decodificado limpiamente
-            resp_slice = x_full[0, prompt_len:total_len].tolist()
-            history.append(decode_tokens_clean(resp_slice, cfg))
+            raw_bytes = bytearray()
+            for tok in x_full[0, 1:total_len].tolist():
+                if tok in (cfg.eos_token_id, cfg.pad_token_id):
+                    break
+                if tok < 256:
+                    raw_bytes.append(tok)
+            history.append(raw_bytes.decode("utf-8", errors="replace"))
 
-        # Consolidar caché KV del bloque finalizado
+        if (block_tokens[0] == cfg.eos_token_id).any() or (block_tokens[0] == cfg.pad_token_id).any():
+            break
+
         t_zero = torch.tensor([0.0], device=cfg.device)
         dt_zero = torch.tensor([0.0], device=cfg.device)
         _, _, _, kv_caches_committed, _ = model(
             block_tokens,
             t_zero,
             delta_t=dt_zero,
-            num_recursions=R,
+            num_recursions=R_infer,
             kv_caches_per_r=kv_caches_committed,
             start_pos=committed_len,
         )
         committed_len = b_end
 
-        # Corte natural LLaDA: si el bloque contiene [EOS], detener sin procesar más bloques
-        if (block_tokens[0] == cfg.eos_token_id).any():
-            break
-
-    final_resp_tokens = x_full[0, prompt_len:total_len].tolist()
-    final_text = decode_tokens_clean(final_resp_tokens, cfg)
+    final_text = history[-1] if history else prompt_text
     return final_text, history, total_block_evals
 
 
-def test_hypothesis_h1(model: TernaryRecursiveDiffusionLM, cfg: HybridConfig):
-    """
-    Prueba de la Hipótesis H1:
-    Modelo entrenado con R=2, evaluado con R in {1, 2, 4, 8} sobre combinaciones
-    rigurosamente reservadas (Held-Out) jamás vistas en entrenamiento.
-    """
-    print("\n" + "=" * 75)
-    print("  TEST HIPÓTESIS H1: ESCALADO DE CÓMPUTO EN INFERENCIA (R in {1, 2, 4, 8}) ")
-    print("=" * 75)
+def evaluate_exact_match_split(
+    model: TernaryRecursiveDiffusionLM,
+    records: List[Tuple[bytes, bytes, int, int]],
+    cfg: HybridConfig,
+    r_infer: int,
+) -> Dict[str, float]:
+    n = len(records)
+    fmt_ok, watt_em, ms_em, both_em, dig_correct, dig_total = 0, 0, 0, 0, 0, 0
+    t0 = time.perf_counter()
 
-    held_out_cases = [
-        # Combinaciones reservadas: nodo, perfil, redundancia, carga -> esperado
-        ("nodo: server\nperfil: turbo\nred: dual\ncarga: pico\n", "watt: 87\nms: 16\n"),
-        ("nodo: compute\nperfil: eco\nred: simple\ncarga: pico\n", "watt: 22\nms: 40\n"),
-        ("nodo: router\nperfil: edge\nred: mesh\ncarga: pico\n", "watt: 53\nms: 7\n"),
-        ("nodo: storage\nperfil: batch\nred: triple\ncarga: media\n", "watt: 35\nms: 22\n"),
-    ]
+    for prompt_b, target_b, true_watt, true_ms in records:
+        prompt_str = prompt_b.decode("utf-8")
+        target_str = target_b.decode("utf-8")
+        gen_text, _, _ = generate_block_causal_with_kv_cache(
+            model, prompt_str, cfg, num_recursions_override=r_infer
+        )
+        is_valid_fmt, pred_w, pred_ms = parse_watt_ms_prediction(gen_text, prompt_str)
+        if is_valid_fmt:
+            fmt_ok += 1
+        if pred_w == true_watt:
+            watt_em += 1
+        if pred_ms == true_ms:
+            ms_em += 1
+        if pred_w == true_watt and pred_ms == true_ms:
+            both_em += 1
 
-    for c_idx, (prompt, target_esperado) in enumerate(held_out_cases, 1):
-        print(f"\n--- Caso OOD #{c_idx} (Held-Out) ---")
-        print(f"Prompt   : {repr(prompt)}")
-        print(f"Esperado : {repr(target_esperado.strip())}")
+        # Exactitud posicional exclusiva en caracteres de dígitos
+        continuation = gen_text[len(prompt_str):] if gen_text.startswith(prompt_str) else ""
+        for idx_c, ch in enumerate(target_str):
+            if ch.isdigit():
+                dig_total += 1
+                if idx_c < len(continuation) and continuation[idx_c] == ch:
+                    dig_correct += 1
 
-        for r_test in (1, 2, 4, 8):
-            salida, _, evals = generate_block_causal_with_kv_cache(
-                model, prompt, cfg, num_recursions=r_test
-            )
-            acierto = (salida.strip() == target_esperado.strip())
-            icono = "✓ EXACTO" if acierto else "✗ DIF"
-            print(f"  R={r_test} | {icono} | Salida: {repr(salida.strip())} | Evals: {evals}")
+    latency_ms = ((time.perf_counter() - t0) / max(1, n)) * 1000.0
+    p_both = both_em / max(1, n)
+    se_both = math.sqrt(p_both * (1.0 - p_both) / max(1, n))
 
-
-def run_comprehensive_h1_evaluation(model: TernaryRecursiveDiffusionLM, cfg: HybridConfig, num_samples: int = 30):
-    """
-    Evaluación sistemática de la Hipótesis H1 sobre una cohorte de tuplas OOD reservadas.
-    Mide tasa de validez sintáctica, latencia promedio y evaluaciones de bloque para R in {1, 2, 4, 8}.
-    """
-    import time
-    test_ds = ProceduralCompositionalDataset(cfg, split="test", num_samples=num_samples)
-    print("\n" + "=" * 75)
-    print(f"  EVALUACIÓN SISTEMÁTICA H1 SOBRE {num_samples} CASOS HELD-OUT (OOD) ")
-    print("=" * 75)
-
-    cases = []
-    for x_0, can_mask in test_ds.samples[:num_samples]:
-        seq = x_0.tolist()
-        mask_indices = can_mask.nonzero()
-        prompt_end = mask_indices[0].item() if len(mask_indices) > 0 else 49
-        p_bytes = [b for b in seq[1:prompt_end] if b < 256]
-        prompt_text = bytes(p_bytes).decode("utf-8", errors="replace")
-        target_bytes = [b for b in seq[prompt_end:] if b not in (cfg.eos_token_id, cfg.pad_token_id) and b < 256]
-        target_text = bytes(target_bytes).decode("utf-8", errors="replace")
-        cases.append((prompt_text, target_text))
-
-    print(f"{'R':<4} | {'Validez Formato':<16} | {'Latencia Media':<16} | {'Evals Bloque'}")
-    print("-" * 55)
-
-    for r_test in (1, 2, 4, 8):
-        valid_format = 0
-        total_lat = 0.0
-        total_evals = 0
-
-        for prompt, target in cases:
-            t0 = time.perf_counter()
-            salida, _, evals = generate_block_causal_with_kv_cache(model, prompt, cfg, num_recursions=r_test)
-            lat = (time.perf_counter() - t0) * 1000.0
-
-            total_lat += lat
-            total_evals += evals
-            if "watt:" in salida and "ms:" in salida:
-                valid_format += 1
-
-        pct_valid = (valid_format / len(cases)) * 100.0
-        avg_lat = total_lat / len(cases)
-        avg_evals = total_evals / len(cases)
-        print(f"R={r_test:<2} | {pct_valid:>6.1f}%          | {avg_lat:>6.1f} ms        | {avg_evals:>5.1f}")
+    return {
+        "n": n,
+        "fmt_pct": 100.0 * fmt_ok / max(1, n),
+        "watt_em_pct": 100.0 * watt_em / max(1, n),
+        "ms_em_pct": 100.0 * ms_em / max(1, n),
+        "both_em_pct": 100.0 * p_both,
+        "both_se_pct": 100.0 * se_both,
+        "digit_acc_pct": 100.0 * dig_correct / max(1, dig_total),
+        "latency_ms": latency_ms,
+    }
 
 
 if __name__ == "__main__":
@@ -234,12 +185,30 @@ if __name__ == "__main__":
     model = TernaryRecursiveDiffusionLM(cfg)
     ckpt = torch.load(cfg.checkpoint_path, map_location="cpu", weights_only=False)
     model.load_state_dict(ckpt["model_state"])
+    model.load_bitcos_archive(cfg.bitcos_export_path)
+    model.prepare_for_eval()
 
-    if os.path.exists(cfg.bitcos_export_path):
-        loaded = model.load_bitcos_archive(cfg.bitcos_export_path)
-        print(f"[BITCOSv2] {loaded} capas ternarias cargadas en modo de inferencia entera int8/int32.")
-    else:
-        print("[Modo FP32/QAT] Evaluando sin archivo binario BITCOS.")
+    train_ds = ProceduralCompositionalDataset(cfg, split="train", num_samples=100)
+    val_ds = ProceduralCompositionalDataset(cfg, split="val", num_samples=100)
 
-    test_hypothesis_h1(model, cfg)
-    run_comprehensive_h1_evaluation(model, cfg, num_samples=25)
+    # 1. Prueba de memorización sobre 96 combinaciones de entrenamiento
+    train_subset = train_ds.unique_records[:96]
+    m_train = evaluate_exact_match_split(model, train_subset, cfg, r_infer=cfg.num_recursions)
+    print(f"=== 1. Control de Memorización en Entrenamiento (96 tuplas Train, R={cfg.num_recursions}) ===")
+    print(
+        f"Formato: {m_train['fmt_pct']:.1f}% | DigAcc: {m_train['digit_acc_pct']:.1f}% | "
+        f"Watt EM: {m_train['watt_em_pct']:.1f}% | MS EM: {m_train['ms_em_pct']:.1f}% | "
+        f"Full Tuple EM: {m_train['both_em_pct']:.1f}% (±{m_train['both_se_pct']:.1f}%)"
+    )
+
+    # 2. Evaluación rigurosa de la Hipótesis H1 sobre las 96 combinaciones Held-Out completas
+    print("\n=== 2. Evaluación Hipótesis H1 en las 96 Tuplas Reservadas (Held-Out OOD) ===")
+    print(f"{'R_infer':<8} | {'Fmt %':<7} | {'DigAcc %':<9} | {'Watt EM %':<10} | {'MS EM %':<8} | {'Full EM % (±SE)':<18} | {'Latencia':<9}")
+    print("-" * 82)
+    for r_val in (1, 2, 4, 8):
+        m_val = evaluate_exact_match_split(model, val_ds.unique_records, cfg, r_infer=r_val)
+        em_str = f"{m_val['both_em_pct']:.1f}% (±{m_val['both_se_pct']:.1f}%)"
+        print(
+            f"R = {r_val:<4} | {m_val['fmt_pct']:>5.1f}% | {m_val['digit_acc_pct']:>7.1f}% | "
+            f"{m_val['watt_em_pct']:>8.1f}% | {m_val['ms_em_pct']:>6.1f}% | {em_str:<18} | {m_val['latency_ms']:>6.1f} ms"
+        )

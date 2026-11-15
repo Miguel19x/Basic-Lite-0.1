@@ -1,147 +1,153 @@
-# Basic-Lite 0.1 (TRDM-v3): Ternary Recursive Discrete Diffusion Language Model
+# Basic-Lite 0.1 (TRDM-v4): Ternary Recursive Discrete Diffusion Language Model
 
-**Basic-Lite 0.1** (arquitectura **TRDM-v3**) es un modelo de lenguaje experimental y científicamente fundado, diseñado desde cero para ejecutarse de forma ágil y eficiente en arquitecturas de CPU estándar de consumo (**Intel Core i3-1115G4**, 2 núcleos físicos / 4 hilos lógicos, 16 GB RAM) bajo Linux.
+**Basic-Lite 0.1** (arquitectura **TRDM-v4**) es un modelo de lenguaje experimental rigurosamente auditado y fundado en principios de eficiencia extrema para hardware estándar de consumo (**Intel Core i3-1115G4**, 2 núcleos físicos / 4 hilos lógicos, 16 GB RAM) bajo Linux.
 
-El proyecto fusiona cinco pilares de la investigación contemporánea en eficiencia:
-1. **Cuantización ternaria consciente del entrenamiento (BitNet b1.58 / W1.58A8)** con empaquetado binario **BITCOSv2**.
-2. **Difusión discreta enmascarada por bloques causales (LLaDA / CDLM)** con reutilización estricta de caché KV.
-3. **Recursión profunda de pesos compartidos (TRM / TRLM)** con transporte de memoria latente $(z_R, y_R)$ mediante compuerta residual adaptativa (`carry_gate`).
-4. **Enrutamiento modular Expert-Choice intra-bloque** con capacidad dinámica $C_{\text{cap}}(t)$ dependiente del ruido y exclusión estricta de tokens de relleno (`PAD`).
-5. **Parada adaptativa por token (Mixture-of-Recursions - MoR)**.
-
----
-
-## 1. Pilares de la Arquitectura
-
-### 1.1. Cuantización Ternaria Consciente del Entrenamiento (W1.58A8 + BITCOSv2)
-* Capas lineales `BitLinear` con estimador de gradiente directo (*Straight-Through Estimator* - STE).
-* Activaciones cuantizadas a 8 bits con signo en el rango $[-127, +127]$ tras normalización previa `SubLN`.
-* Pesos restringidos al alfabeto $\{-1, 0, +1\}$ escalados por su media absoluta (`absmean`).
-* **Empaquetado BITCOSv2:** Almacenamiento binario compacto a $2-z$ bits/peso (mapa de presencia + signos). Las 14 matrices ternarias del modelo ocupan únicamente **~164 KB** en disco (~1.73 bpw).
-
-### 1.2. Difusión Discreta Enmascarada Block-Causal (LLaDA / CDLM)
-* Secuencias organizadas en bloques de 16 tokens exactos ($B_{\text{blk}} = 16$).
-* **Atención Block-Causal:** Atención causal estricta hacia bloques pasados consolidados y bidireccional no causal dentro del bloque activo para reconstruir texto en paralelo.
-* **Caché KV Inmutable:** Los bloques prefijados del prompt y los bloques resueltos se congelan en la caché KV, eliminando recomputaciones redundantes.
-* **Agrupación GQA 2:1:** 4 cabezas de consulta ($Q$) agrupadas sobre 2 cabezas de clave/valor ($K, V$), reduciendo un 50% el consumo de ancho de banda a la memoria.
-
-### 1.3. Recursión Profunda con Separación de Doble Estado (TRM / TRLM)
-* Reutilización de un único bloque recurrente compartido `SharedDualStateRecursiveCore` ejecutado $R$ veces por paso.
-* Separación estricta de tres componentes latentes:
-  * Ancla proyectada: $a = \text{Linear}(x_0)$
-  * Estado de razonamiento latente: $z_{r+1} = f_\theta(a, y_r, z_r)$
-  * Propuesta de respuesta tentativa: $y_{r+1} = g_\theta(y_r, z_{r+1})$
-* **Transporte Latente:** La compuerta aprendible `carry_gate` transfiere $(z_R, y_R)$ desconectado del grafo (`detach`) entre pasos de difusión sucesivos, eliminando la amnesia entre rondas.
-* **Condicionamiento Conjunto $(t, \Delta t)$:** Modulación adaptativa según el nivel de ruido actual $t$ y el intervalo temporal $\Delta t = |t_{\text{prev}} - t_{\text{act}}|$.
-
-### 1.4. Enrutamiento Modular Expert-Choice MoE Intra-Bloque
-* 4 expertos ternarios con activación $\text{ReLU}^2$.
-* **Causalidad Estricta Intra-Bloque:** La selección top-$k$ de tokens se restringe rígidamente al interior de cada bloque de 16 tokens. Esto garantiza que ningún token futuro filtre información hacia bloques pasados ni invalide la caché KV.
-* **Exclusión de PAD:** Los tokens de relleno (`PAD`) son enmascarados antes del cálculo de selección, impidiendo que consuman capacidad de cómputo en los expertos.
-* **Capacidad Dinámica $C_{\text{cap}}(t)$:** Modula dinámicamente la capacidad de los expertos entre $0.65\times$ en fases ruidosas y $1.35\times$ en fases finales de alta certidumbre.
+El proyecto fusiona cinco ejes clave de la investigación contemporánea en modelos compactos:
+1. **Cuantización Ternaria Consciente del Entrenamiento (W1.58A8 / BitNet b1.58)** con serialización empaquetada **BITCOSv2**.
+2. **Difusión Discreta Enmascarada Block-Causal (CDLM / LLaDA)** con reutilización estricta de caché KV inmutable.
+3. **Recursión Profunda de Pesos Compartidos (TRM / TRLM)** con incrustación sinusoidal continua $\text{PE}(u_r)$ y transferencia latente $(z_R, y_R)$ mediante `carry_gate`.
+4. **Enrutamiento Modular Expert-Choice Intra-Bloque** con exclusión estricta de tokens de relleno (`PAD`).
+5. **Parada Adaptativa por Token (Mixture-of-Recursions - MoR)**.
 
 ---
 
-## 2. Generalización Composicional Fuera de Distribución (OOD)
+## 1. Auditoría Estadística del Dataset y Deconstrucción del Techo Trivial (85.5%)
 
-Para evitar que el modelo actúe como una mera tabla de memorización, la evaluación se realiza sobre un entorno procedural estructurado con 4 ejes ortogonales independientes:
-* **Nodo (6):** `server`, `switch`, `storage`, `compute`, `sensor`, `router`
-* **Perfil de Potencia (5):** `eco`, `base`, `turbo`, `edge`, `batch`
-* **Nivel de Redundancia (4):** `simple`, `dual`, `triple`, `mesh`
-* **Carga de Trabajo (4):** `baja`, `media`, `alta`, `pico`
+En iteraciones iniciales, se reportaban métricas de *"precisión de tokens"* superiores al 86% sobre secuencias fuera de distribución (OOD). La auditoría estadística formal en Python puro ([auditoria_dataset.py](file:///home/Miguel19x/Escritorio/Importante/Programación%20-%20General/Basic-Lite%200.1/auditoria_dataset.py)) demostró de manera concluyente que dicho porcentaje era un **espejismo estadístico**:
 
-Total del espacio de estados: $6 \times 5 \times 4 \times 4 = 480$ combinaciones posibles.
-* **Entrenamiento:** 384 combinaciones (80%).
-* **Held-Out (OOD):** 96 combinaciones (20%) rigurosamente reservadas que el modelo **jamás observa en entrenamiento**.
-
-### Supervisión de Longitud Estilo LLaDA
-El modelo aprende la predicción autónoma de longitud mediante supervisión de la posición de fin de secuencia `[EOS]` seguida de tokens `[PAD]`. Esto elimina cualquier regla heurística de corte en inferencia.
-
----
-
-## 3. Verificación de la Hipótesis H1 (Cómputo en Inferencia)
-
-La **Hipótesis H1** postula que un modelo recurrente con pesos compartidos entrenado con bajo cómputo ($R_{\text{train}} = 2$) puede mejorar su capacidad de resolución y precisión sobre combinaciones no vistas simplemente incrementando el número de recursiones en inferencia ($R_{\text{infer}} \in \{1, 2, 4, 8\}$) sin ningún reentrenamiento ni ajuste de parámetros.
-
-### Resultados Empíricos de H1 sobre Casos Held-Out (OOD):
-Evaluación sistemática de 25 combinaciones rigurosamente reservadas que el modelo jamás observó en entrenamiento:
-
-| Profundidad ($R_{\text{infer}}$) | Validez de Formato | Latencia Media | Evals de Bloque | Diagnóstico de Razonamiento |
-| :---: | :---: | :---: | :---: | :--- |
-| **$R = 1$** | 20.0% | 42.4 ms | 11.0 | Errores ortográficos (`wwtt:`), falta de refinamiento interno. |
-| **$R = 2$** (*train*) | 24.0% | 66.9 ms | 10.4 | Formato base consolidado (`wwttt 133ms:`). |
-| **$R = 4$** | **56.0%** | 108.6 ms | 10.4 | **Pico de rendimiento (+133% vs $R=2$):** Sintaxis y campos perfectamente estructurados. |
-| **$R = 8$** | 32.0% | 184.1 ms | 10.4 | Deriva por exceso de recursión (*over-thinking*) sin regularización de profundidad. |
-
-**Conclusión:** La hipótesis H1 queda validada empíricamente con un régimen óptimo en $R=4$, duplicando la tasa de éxito sintáctico sin alterar los pesos del modelo.
-
----
-
-## 4. Comparativa Frente al Baseline Autorregresivo Denso (Dense AR)
-
-Para contrastar el coste y comportamiento del híbrido ternario frente a la arquitectura clásica de Transformer, se implementó y entrenó [baseline_ar.py](file:///home/Miguel19x/Escritorio/Importante/Programación%20-%20General/Basic-Lite%200.1/baseline_ar.py) (Transformer Decoder Causal denso en FP32, calibrado al mismo orden de magnitud: 935k parámetros) sobre el mismo dataset composicional:
-
-| Métrica | Baseline AR Denso (FP32) | TRDM-v3 Híbrido (INT8 BITCOSv2) | Ventaja / Observación |
-| :--- | :---: | :---: | :--- |
-| **Parámetros Totales** | 935,616 (100% FP32) | 869,014 (**89.1% ternarios**) | Mismo orden de capacidad |
-| **Tamaño Desplegable** | 3,742.5 KB (~3.74 MB) | **536.8 KB** | **6.3× más ligero** |
-| **Latencia de Respuesta** | **23.7 ms** | 84.1 ms ($R=2$) / 108.6 ms ($R=4$) | El modelo AR es 3.5× más rápido en CPU |
-| **Comportamiento OOD** | Colapso repetitivo (`watttttt: 3`) | Refinamiento bidireccional holístico | La difusión evita bucles infinitos de tokens |
-| **Operaciones Dominantes** | Multiplicaciones flotantes (GEMM) | Sumas y restas enteras (int8/int32) | Apto para hardware sin FPU dedicada |
-
----
-
-## 5. Métricas Empíricas de Rendimiento en Linux CPU (Intel Core i3-1115G4)
-
-Valores empíricos medidos sobre 4 hilos CPU:
-
-| Métrica | Valor Medido | Observaciones |
-| :--- | :--- | :--- |
-| **Parámetros Únicos Totales** | **869,014** | **89.1%** alojados en capas ternarias `BitLinear` |
-| **Parámetros Ternarios (14 matrices)** | 774,144 | Cuantizados en $\{-1, 0, +1\}$ |
-| **Tamaño BITCOSv2 en Disco** | **166.2 KB** | **1.752 bpw** (empaquetado presencia + signo) |
-| **Parámetros FP32 Restantes** | 94,870 (~370.6 KB) | Embeddings, RMSNorms, `carry_gate`, router MoE, MLP |
-| **Tamaño Desplegable Total** | **536.8 KB** | **6.3× de reducción real** frente a los 3,394.6 KB en FP32 |
-| **Atención GQA (4:2)** | Ahorro 50% en KV | Menor tráfico de memoria RAM |
-| **Paso de Entrenamiento (QAT + STE)** | 199.1 ms | Lote $B=16$, longitud $L=80$, 2 pasos encadenados |
-| **Generación Block-Causal (FP32)** | 135.9 ms | 11 evaluaciones de bloque local con caché KV |
-| **Generación Block-Causal (INT8 BITCOSv2)** | **84.1 ms** | **1.6× más rápido** que FP32 con acumulación entera |
-| **Consumo Máximo de RAM (RSS)** | **495.5 MB** | < 3.2% de los 16 GB de RAM del equipo |
-| **Precisión Token en Held-Out (300 pasos)** | **86.0%** | Precisión de token sobre tuplas OOD jamás vistas |
-
-### Micro-benchmark de Capas BitLinear (192 $\rightarrow$ 384, lote 16×16)
-Medición directa del coste de la proyección lineal según el backend de ejecución:
-* **FP32 `F.linear` (BLAS optimizado):** `0.908 ms`
-* **INT8 PyTorch `torch.matmul`:** `3.476 ms` (sin aceleración VNNI en la compilación estándar de PyTorch)
-* **Suma/Resta Pura (Descomposición de Signos PyTorch):** `1.734 ms` (**2.0× más rápido** que el `matmul` int8 de PyTorch)
-* **Kernel C Nativo (OpenMP/AVX2 [ternary_cpu_kernel.py](file:///home/Miguel19x/Escritorio/Importante/Programación%20-%20General/Basic-Lite%200.1/ternary_cpu_kernel.py)):** `3.372 ms`
-
----
-
-## 6. Guía de Ejecución
-
-### Requisitos y Entorno
-```bash
-# Activar el entorno virtual optimizado para CPU
-source venv/bin/activate
+```
+=== Auditoría Estadística del Dataset (Python Puro) ===
+Combinaciones Totales : 480 (Train: 384 [80.0%] | Held-Out: 96 [20.0%])
+Posiciones supervisadas por muestra (media): 28.2 bytes
+  - Plantilla fija ('watt: ', 'ms: ', '\n') : 42.5%
+  - Tokens [PAD]                            : 39.4%
+  - Token [EOS]                             : 3.5%
+  - Dígitos reales a calcular ('0'..'9')    : 14.5% (apenas 4 bytes por muestra)
+Techo Trivial (acertar solo plantilla+PAD)  : 85.52%
+Techo Mayoría (plantilla + dígito frecuente): 88.59%
+Techo Dígitos Clase Mayoritaria             : 21.17%
 ```
 
-### A. Medición de Rendimiento y Memoria (Benchmark)
+### Hallazgo Metodológico Clave
+* De las 28.2 posiciones promedio supervisadas en cada respuesta, el **85.52%** está compuesto enteramente por sintaxis estática (`watt: `, `ms: `, saltos de línea) y relleno (`PAD`).
+* Un modelo que no compute ninguna operación y memorice únicamente la plantilla fija obtiene un **85.5% de precisión global**.
+* Predecir el dígito más frecuente en las posiciones numéricas eleva la precisión global al **88.59%**.
+* **Corrección Implementada en TRDM-v4:** Se eliminó la evaluación por token global y se adoptaron métricas estrictas:
+  * **Exact Match (EM) Numérico:** Acierto exacto del valor entero predicho para `watt`, `ms` y la tupla completa (`both_em`).
+  * **Exactitud Aislada de Dígitos (`DigAcc`):** Medición de precisión restringida exclusivamente a las posiciones numéricas (bytes ASCII `48..57`).
+  * **Ponderación de Gradientes en Entrenamiento:** Factor $\times 6.0$ en bytes de dígitos, $\times 1.0$ en plantilla/EOS y $\times 0.2$ en PAD para contrarrestar la dilución de gradiente.
+
+---
+
+## 2. Novedades y Correcciones Arquitectónicas en TRDM-v4
+
+### 2.1. Codificación Sinusoidal Continua de Profundidad ($\text{PE}(u_r)$)
+En versiones previas, se utilizaba una tabla discreta `nn.Embedding(num_recursions + 8)`. Al entrenar con recursión fija $R_{\text{train}} = 2$, las filas $r \ge 2$ permanecían en su inicialización aleatoria $\mathcal{N}(0, 1)$, contaminando la inferencia en profundidades $R \in \{4, 8\}$.
+
+En **TRDM-v4**, la tabla de embeddings se reemplazó por un codificador sinusoidal continuo sobre la coordenada normalizada:
+$$u_r = \frac{r+1}{R} \in (0, 1]$$
+Junto con escalas residuales compartidas $\alpha_z, \beta_y$ normalizadas por $\frac{2}{R+1}$, garantizando que toda profundidad $R_{\text{infer}} \in \{1, 2, 4, 8\}$ evalúe únicamente parámetros regularizados y entrenados al 100%.
+
+### 2.2. Enrutamiento Expert-Choice Intra-Bloque con Exclusión de PAD
+* La selección top-$k$ de tokens en el router MoE se confina rígidamente dentro de cada bloque de 16 tokens ($B_{\text{blk}} = 16$), impidiendo cualquier fuga causal hacia bloques futuros o invalidación de la caché KV.
+* Los tokens `PAD` se enmascaran antes del cálculo del router, evitando que consuman los cupos de capacidad de los expertos ternarios.
+
+### 2.3. Caché de Pesos Efectivos ($W_{\text{eff}}$) en Inferencia
+Para evitar penalizar artificialmente la latencia en benchmarks de CPU recalculando continuamente la cuantización durante el bucle de generación, las capas `BitLinear` cachean la matriz $W_{\text{eff}} = \gamma \cdot \text{RoundClip}(W / \gamma)$ al cambiar a modo `eval()`.
+
+---
+
+## 3. Protocolo de Evaluación Experimental Multi-Semilla (H1)
+
+Para someter a prueba la **Hipótesis H1** (*"un modelo recurrente con pesos compartidos entrenado con bajo cómputo puede mejorar su capacidad de resolución en combinaciones no vistas simplemente incrementando el número de recursiones en inferencia"*), se ejecutó un protocolo riguroso:
+* **Semillas Evaluadas:** 3 semillas pseudoaleatorias independientes (`42`, `1337`, `2026`).
+* **Pasos de Entrenamiento:** 800 pasos por semilla (lote $B=16$, longitud $L=80$).
+* **Baseline Autorregresivo:** Modelo Transformer Causal en FP32 (`baseline_ar.py`), entrenado durante 1,600 pasos ($2\times$) para igualar exactamente las 2 pasadas por paso del modelo de difusión.
+* **Muestra de Evaluación:** Partición fija de 384 tuplas de entrenamiento y **96 tuplas Held-Out (20.0%)** jamás vistas, evaluadas en las 3 semillas ($N = 288$ evaluaciones OOD por cada profundidad).
+* **Análisis Estadístico:** Prueba pareada exacta de McNemar frente a $R=2$ con corrección de Bonferroni ($\alpha = 0.05 / 3 = 0.0167$).
+
+### Tabla Completa de Resultados Empíricos (Media ± Desv. Estándar)
+
+| Modelo / Régimen | Prof. Inferencia ($R$) | Train Full-EM (%) | OOD Full-EM (%) | OOD Watt-EM (%) | OOD MS-EM (%) | OOD DigAcc (%) | OOD Validez Fmt (%) | Latencia CPU (ms) | McNemar $p$ (vs $R=2$) |
+| :--- | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: |
+| **Techo Trivial Mayoría** | — | — | 0.0% | 0.0% | 0.0% | **21.17%** | — | — | — |
+| **TRDM-v4 (`fixed_R2`)** | $R = 1$ | — | 0.0% ± 0.0% | 0.0% ± 0.0% | 0.0% ± 0.0% | 11.22% ± 2.55% | 2.08% ± 2.08% | 38.3 ms | 1.0000 (n.s.) |
+| **TRDM-v4 (`fixed_R2`)** | $R = 2$ (*train*) | 0.0% ± 0.0% | 0.0% ± 0.0% | 0.0% ± 0.0% | 0.35% ± 0.60% | 13.95% ± 2.80% | 2.43% ± 4.21% | 85.1 ms | Ref. |
+| **TRDM-v4 (`fixed_R2`)** | $R = 4$ | — | 0.0% ± 0.0% | 0.0% ± 0.0% | 0.0% ± 0.0% | 14.12% ± 3.82% | 7.99% ± 3.94% | 164.7 ms | 1.0000 (n.s.) |
+| **TRDM-v4 (`fixed_R2`)** | $R = 8$ | — | 0.0% ± 0.0% | 0.0% ± 0.0% | 0.69% ± 1.20% | 15.31% ± 3.10% | 9.38% ± 5.51% | 325.9 ms | 1.0000 (n.s.) |
+| **TRDM-v4 (`random_R123`)** | $R = 1$ | — | 0.0% ± 0.0% | 0.0% ± 0.0% | 0.35% ± 0.60% | 11.90% ± 4.68% | 1.04% ± 1.04% | 39.7 ms | 1.0000 (n.s.) |
+| **TRDM-v4 (`random_R123`)** | $R = 2$ | 0.0% ± 0.0% | 0.0% ± 0.0% | 0.0% ± 0.0% | 0.0% ± 0.0% | 11.82% ± 3.65% | 3.47% ± 1.59% | 76.1 ms | Ref. |
+| **TRDM-v4 (`random_R123`)** | $R = 4$ | — | 0.0% ± 0.0% | 0.0% ± 0.0% | 0.0% ± 0.0% | 14.12% ± 1.66% | 6.94% ± 1.59% | 149.0 ms | 1.0000 (n.s.) |
+| **TRDM-v4 (`random_R123`)** | $R = 8$ | — | 0.0% ± 0.0% | 0.0% ± 0.0% | 0.0% ± 0.0% | 14.71% ± 1.28% | 4.86% ± 2.17% | 288.2 ms | 1.0000 (n.s.) |
+| **Baseline AR Denso (FP32)** | 1 (Autorr.) | **15.28% ± 3.94%** | 0.0% ± 0.0% | 0.69% ± 0.60% | 4.86% ± 1.59% | **20.75% ± 1.93%** | **94.44% ± 2.62%** | **35.3 ms** | — |
+
+*Datos brutos completos exportados en [multi_seed_h1_results.json](file:///home/Miguel19x/Escritorio/Importante/Programación%20-%20General/Basic-Lite%200.1/multi_seed_h1_results.json).*
+
+---
+
+## 4. Análisis Científico y Conclusiones
+
+### 4.1. Veredicto sobre la Hipótesis H1
+* **La Hipótesis H1 no se sostiene empíricamente para el razonamiento aritmético composicional:** En todas las configuraciones, el Exact Match numérico completo sobre el conjunto reservado Held-Out se mantuvo en **0.0%** ($p = 1.0000$ en la prueba de McNemar vs $R=2$).
+* **Dinámica de la Recursión Latente:** Incrementar $R$ de 1 a 8 muestra una tendencia positiva monótona en la exactitud aislada de dígitos ($11.22\% \to 15.31\%$) y en la validez del formato sintáctico ($2.08\% \to 9.38\%$). No obstante, este incremento permanece **por debajo del techo del predictor trivial de mayoría (21.17%)**.
+* **Principio Demostrado:** La escalabilidad de cómputo en inferencia (*test-time scaling*) es capaz de refinar la coherencia de las representaciones latentes, pero **no puede sintetizar reglas lógicas ni operaciones aritméticas que el modelo no consolidó durante la fase de entrenamiento**.
+
+### 4.2. Comparativa frente al Baseline Autorregresivo Denso
+* **Memorización Aritmética:** El modelo autorregresivo denso en FP32 (con 1,600 pasos) logró memorizar parcialmente las relaciones no lineales del conjunto de entrenamiento (**15.28% Full Exact Match**, **48.28% DigAcc** en Train), mientras que el modelo de difusión ternaria con QAT a 800 pasos no logró resolver la tarea aritmética en Train (0.0% Full-EM, 21.07% DigAcc, equivalente a la clase mayoritaria).
+* **Latencia y Rendimiento en CPU:**
+  * El baseline autorregresivo denso en FP32 genera secuencias completas en **35.3 ms** en CPU.
+  * El modelo de difusión recursiva requiere **85.1 ms** a $R=2$ y **325.9 ms** a $R=8$, debido a la necesidad de múltiples pasos de refinamiento bidireccional por bloque.
+* **Huella en Disco y Memoria:**
+  * El modelo TRDM-v4 empaquetado con BITCOSv2 ocupa **673.2 KiB** en disco (166.2 KiB ternario + 507.0 KiB FP32), representando una **reducción de 5.25×** frente a los 3,531.0 KiB del modelo en FP32 completo.
+  * El consumo de memoria RAM en ejecución se mantiene en **~331 MiB**, haciéndolo completamente apto para dispositivos embebidos o CPUs de baja potencia.
+
+---
+
+## 5. Estructura del Repositorio y Reproducibilidad
+
+```
+.
+├── auditoria_dataset.py       # Auditoría estadística en Python puro (partición 384/96 y techos triviales)
+├── baseline_ar.py             # Baseline autorregresivo denso FP32 calibrado a igual cómputo (1600 pasos)
+├── benchmark.py               # Medición rigurosa de parámetros, tamaños KiB, latencia y memoria RSS
+├── config.py                  # Parámetros arquitectónicos, pesos de pérdida y configuración
+├── data.py                    # Generador procedimental con partición verificada mediante assert
+├── generate.py                # Generación block-causal con evaluación estricta de Exact Match
+├── model.py                   # TRDM-v4: BitLinear con W_eff en eval(), PE(u_r) continuo y Expert-Choice
+├── multi_seed_h1_results.json # Datos empíricos brutos de la corrida multi-semilla (3 semillas, N=288)
+├── run_multi_seed_h1.py       # Automatización del protocolo multi-semilla y test de McNemar
+├── ternary_cpu_kernel.py      # Kernel nativo C compilado para operaciones ternarias
+└── train.py                   # Entrenamiento con pérdida reponderada y difusión encadenada de 2 pasos
+```
+
+### Comandos de Ejecución
+
+1. **Verificar la partición y el techo trivial (sin dependencias, < 1 seg):**
+```bash
+python3 auditoria_dataset.py
+```
+
+2. **Ejecutar el benchmark de memoria y latencia:**
 ```bash
 python3 benchmark.py
 ```
 
-### B. Entrenamiento con Difusión Encadenada de 2 Pasos
+3. **Entrenar el modelo TRDM-v4:**
 ```bash
 python3 train.py
 ```
 
-### C. Inferencia y Evaluación Sistemática de la Hipótesis H1
+4. **Evaluar inferencia y Exact Match:**
 ```bash
 python3 generate.py
 ```
 
-### D. Entrenamiento y Evaluación del Baseline Autorregresivo Denso
+5. **Entrenar y evaluar el baseline autorregresivo:**
 ```bash
 python3 baseline_ar.py
+```
+
+6. **Reproducir el experimento multi-semilla completo (H1):**
+```bash
+python3 run_multi_seed_h1.py --seeds 42 1337 2026 --steps 800
 ```
