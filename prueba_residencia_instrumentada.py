@@ -154,7 +154,8 @@ class PagedResidentEngine:
         self.faults_storage_observed = 0
         self.evictions = 0
 
-        self.logical_bytes_requested = 0
+        self.bytes_solicitados_pread = 0
+        self.bytes_devueltos_pread = 0
         self.rchar_net = 0
         self.read_bytes_storage = 0
 
@@ -167,51 +168,34 @@ class PagedResidentEngine:
 
     def forward(self, expert_id: int, x_int8: torch.Tensor, force_storage_miss: bool = False) -> Tuple[torch.Tensor, Dict[str, Any]]:
         self.total_queries += 1
+        is_hit = expert_id in self.slots
+
+        # La instrumentación del experimento se ejecuta estrictamente FUERA del cronómetro de la llamada
+        if force_storage_miss and not is_hit:
+            os.posix_fadvise(self.fd, expert_id * self.expert_size, self.expert_size, os.POSIX_FADV_DONTNEED)
+
+        if not is_hit:
+            io_0 = get_proc_io_stats()
+
+        # === INICIO CRONÓMETRO DE LLAMADA AL MOTOR ===
         t_call_start = time.perf_counter_ns()
 
         t_read_us = 0.0
-        delta_rchar = 0
-        delta_read_bytes = 0
+        bytes_devueltos_call = 0
         regime = ""
 
-        # Comprobar si el experto ya está en los slots de aplicación (Acierto Residente)
-        if expert_id in self.slots:
+        if is_hit:
             regime = "Acierto residente"
             self.resident_hits += 1
             self.slots.move_to_end(expert_id)
             expert_data = self.slots[expert_id]
         else:
-            # Fallo de aplicación: requiere lectura explícita con pread
-            self.logical_bytes_requested += self.expert_size
-
-            # Si se solicita simular un fallo en frío sin privilegios, descartamos las páginas de este experto
-            if force_storage_miss:
-                os.posix_fadvise(self.fd, expert_id * self.expert_size, self.expert_size, os.POSIX_FADV_DONTNEED)
-
-            # Muestreo de /proc/self/io antes de pread
-            io_0 = get_proc_io_stats()
+            # Fallo de aplicación: lectura explícita con pread(2)
             t_read_start = time.perf_counter_ns()
             expert_data = os.pread(self.fd, self.expert_size, expert_id * self.expert_size)
             t_read_end = time.perf_counter_ns()
-            io_1 = get_proc_io_stats()
-
             t_read_us = (t_read_end - t_read_start) / 1000.0
-
-            # Aislar el tráfico de la llamada descontando la instrumentación
-            raw_rchar_diff = io_1["rchar"] - io_0["rchar"]
-            delta_rchar = max(0, raw_rchar_diff - self.io_overhead)
-            delta_read_bytes = max(0, io_1["read_bytes"] - io_0["read_bytes"])
-
-            self.rchar_net += delta_rchar
-            self.read_bytes_storage += delta_read_bytes
-
-            # Clasificación de régimen
-            if delta_read_bytes > 0:
-                regime = "Fallo con lectura de almacenamiento observada"
-                self.faults_storage_observed += 1
-            else:
-                regime = "Fallo de aplicación, caché del sistema caliente"
-                self.faults_page_cache_hot += 1
+            bytes_devueltos_call = len(expert_data)
 
             # Gestión de slots LRU en memoria de aplicación
             if len(self.slots) >= self.max_slots:
@@ -219,11 +203,11 @@ class PagedResidentEngine:
                 self.evictions += 1
 
             self.slots[expert_id] = expert_data
-            # Invariante duro de memoria: nunca más de max_slots ocupados
+            # Invariante duro de memoria
             assert len(self.slots) <= self.max_slots, f"Invariante violado: {len(self.slots)} > {self.max_slots}"
 
         # Ejecución aritmética del experto
-        # 1. Preparación / obtención de punteros
+        # 1. Preparación de punteros
         t_prep_start = time.perf_counter_ns()
         packed_A = expert_data[:262144]
         packed_B = expert_data[262144:]
@@ -245,8 +229,33 @@ class PagedResidentEngine:
         t_m2_end = time.perf_counter_ns()
         t_m2_us = (t_m2_end - t_m2_start) / 1000.0
 
+        # === FIN CRONÓMETRO DE LLAMADA AL MOTOR ===
         t_call_end = time.perf_counter_ns()
         t_total_us = (t_call_end - t_call_start) / 1000.0
+
+        # Medición de E/S y clasificación de régimen estrictamente DESPUÉS de detener el cronómetro
+        delta_rchar = 0
+        delta_read_bytes = 0
+        if not is_hit:
+            io_1 = get_proc_io_stats()
+            raw_rchar_diff = io_1["rchar"] - io_0["rchar"]
+            delta_rchar = max(0, raw_rchar_diff - self.io_overhead)
+            delta_read_bytes = max(0, io_1["read_bytes"] - io_0["read_bytes"])
+
+            self.bytes_solicitados_pread += self.expert_size
+            self.bytes_devueltos_pread += bytes_devueltos_call
+            self.rchar_net += delta_rchar
+            self.read_bytes_storage += delta_read_bytes
+
+            if delta_read_bytes > 0:
+                regime = "Fallo con lectura de almacenamiento observada"
+                self.faults_storage_observed += 1
+            else:
+                regime = "Fallo de aplicación, caché del sistema caliente"
+                self.faults_page_cache_hot += 1
+
+        # Tiempo residual: gestión LRU, búsqueda de hash, asignación de slot y envoltorio
+        t_residual_us = max(0.0, t_total_us - (t_read_us + t_prep_us + t_m1_us + t_m2_us))
 
         record = {
             "query_idx": self.total_queries,
@@ -256,7 +265,10 @@ class PagedResidentEngine:
             "t_prep_us": t_prep_us,
             "t_mult1_us": t_m1_us,
             "t_mult2_us": t_m2_us,
+            "t_residual_us": t_residual_us,
             "t_total_us": t_total_us,
+            "bytes_solicitados": self.expert_size if not is_hit else 0,
+            "bytes_devueltos": bytes_devueltos_call,
             "delta_rchar": delta_rchar,
             "delta_read_bytes": delta_read_bytes,
             "active_resident_slots": len(self.slots),
@@ -435,11 +447,17 @@ def main():
     print("\n================================================================================")
     print(" RESUMEN DE LAS 100 LLAMADAS DETERMINISTAS (CLASIFICACIÓN DE RÉGIMEN)")
     print("================================================================================")
+    tot_solicitados = sum(r["bytes_solicitados"] for r in records_100)
+    tot_devueltos = sum(r["bytes_devueltos"] for r in records_100)
+    tot_rchar = sum(r["delta_rchar"] for r in records_100)
+    tot_storage = sum(r["delta_read_bytes"] for r in records_100)
+
     print(f"Total consultas:                           {len(records_100)}")
     print(f"Presupuesto pesos empaquetados residentes: 2 slots (1.0 MiB)")
-    print(f"Total Bytes Lógicos Solicitados:           {sum(r['delta_rchar'] for r in records_100 if 'Fallo' in r['regime']):,} bytes")
-    print(f"Total rchar devuelto (neto pread):         {sum(r['delta_rchar'] for r in records_100):,} bytes")
-    print(f"Total read_bytes (disco físico NVMe):      {sum(r['delta_read_bytes'] for r in records_100):,} bytes\n")
+    print(f"Total Bytes Solicitados a pread:           {tot_solicitados:,} bytes ({tot_solicitados / (1024*1024):.2f} MiB)")
+    print(f"Total Bytes Devueltos por pread:           {tot_devueltos:,} bytes ({tot_devueltos / (1024*1024):.2f} MiB)")
+    print(f"Total rchar devuelto (neto pread + proc):  {tot_rchar:,} bytes (diferencia instrumentación: {tot_rchar - tot_devueltos} bytes)")
+    print(f"Total read_bytes (disco físico NVMe):      {tot_storage:,} bytes ({tot_storage / (1024*1024):.2f} MiB)\n")
 
     regime_summaries = {}
 
@@ -451,32 +469,40 @@ def main():
         t_preps = [r["t_prep_us"] for r in reg_records]
         t_m1s = [r["t_mult1_us"] for r in reg_records]
         t_m2s = [r["t_mult2_us"] for r in reg_records]
+        t_residuals = [r["t_residual_us"] for r in reg_records]
         t_totals = [r["t_total_us"] for r in reg_records]
 
-        bytes_req = sum(524288 for r in reg_records if "Fallo" in reg_name)
+        bytes_sol = sum(r["bytes_solicitados"] for r in reg_records)
+        bytes_dev = sum(r["bytes_devueltos"] for r in reg_records)
         rchar_sum = sum(r["delta_rchar"] for r in reg_records)
         read_bytes_sum = sum(r["delta_read_bytes"] for r in reg_records)
 
         reg_stats = {
             "conteo": n,
             "porcentaje": round(pct, 1),
-            "bytes_logicos": bytes_req,
+            "bytes_solicitados_pread": bytes_sol,
+            "bytes_devueltos_pread": bytes_dev,
             "rchar_neto": rchar_sum,
             "read_bytes_storage": read_bytes_sum,
             "t_lectura_us": compute_statistics_summary(t_reads),
             "t_prep_us": compute_statistics_summary(t_preps),
             "t_mult1_us": compute_statistics_summary(t_m1s),
             "t_mult2_us": compute_statistics_summary(t_m2s),
+            "t_residual_us": compute_statistics_summary(t_residuals),
             "t_total_us": compute_statistics_summary(t_totals),
         }
         regime_summaries[reg_name] = reg_stats
 
         print(f"---> Régimen: {reg_name}")
-        print(f"  Conteos: {n}/100 ({pct:.1f}%) | Bytes Lógicos: {bytes_req:,} | rchar: {rchar_sum:,} | read_bytes: {read_bytes_sum:,}")
+        print(f"  Conteos: {n}/100 ({pct:.1f}%) | Bytes Pread: {bytes_dev:,} | rchar: {rchar_sum:,} | read_bytes: {read_bytes_sum:,}")
         tot_stat = reg_stats["t_total_us"]
         read_stat = reg_stats["t_lectura_us"]
-        print(f"  Latencia Total (us)   : Mediana={tot_stat['mediana']} | IQR={tot_stat['iqr']} | Rango=[{tot_stat['min']}, {tot_stat['max']}] | Media={tot_stat['media']} +- {tot_stat['std']}")
-        print(f"  Desglose Mediana (us) : Lectura={read_stat['mediana']} | Prep={reg_stats['t_prep_us']['mediana']} | Mult1(4096->256)={reg_stats['t_mult1_us']['mediana']} | Mult2(256->4096)={reg_stats['t_mult2_us']['mediana']}")
+        prep_stat = reg_stats["t_prep_us"]
+        m1_stat = reg_stats["t_mult1_us"]
+        m2_stat = reg_stats["t_mult2_us"]
+        res_stat = reg_stats["t_residual_us"]
+        print(f"  Mediana del tiempo total medido por llamada : {tot_stat['mediana']} us | IQR={tot_stat['iqr']} us | Rango=[{tot_stat['min']}, {tot_stat['max']}] us | Media={tot_stat['media']} +- {tot_stat['std']} us")
+        print(f"  Desglose de Medianas por Etapa (us)         : Lectura={read_stat['mediana']} | Prep={prep_stat['mediana']} | Mult1(4096->256)={m1_stat['mediana']} | Mult2(256->4096)={m2_stat['mediana']} | Residual(LRU/gestor)={res_stat['mediana']}")
         print()
 
     # Resumen de la tanda completa de 300 llamadas
