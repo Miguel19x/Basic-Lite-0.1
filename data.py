@@ -57,7 +57,15 @@ class ProceduralCompositionalDataset(Dataset):
                             ms = max(1, int(round(b_ms * m_ms + a_ms + o_ms)))
                             target_str = f"watt: {watt}\nms: {ms}\n"
 
-                        prompt_str = f"nodo: {n_name}\ncarga: {c_name}\nred: {r_name}\nperfil: {p_name}\n"
+                        if getattr(cfg, "use_explicit_operands", False):
+                            # Opción A: inclusión de operandos numéricos estructurados mediante transformación fija
+                            prompt_str = (
+                                f"nodo: {n_name}\ncarga: {c_name}\nred: {r_name}\nperfil: {p_name}\n"
+                                f"bw: {b_w} mw: {m_w} aw: {a_w} ow: {o_w} bms: {b_ms} mms: {m_ms} ams: {a_ms} oms: {o_ms}\n"
+                            )
+                        else:
+                            prompt_str = f"nodo: {n_name}\ncarga: {c_name}\nred: {r_name}\nperfil: {p_name}\n"
+
                         p_bytes = prompt_str.encode("utf-8")
                         t_bytes = target_str.encode("utf-8")
                         record = (p_bytes, t_bytes, watt, ms)
@@ -84,6 +92,13 @@ class ProceduralCompositionalDataset(Dataset):
 
     def __getitem__(self, idx: int) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         prompt_b, target_b, _, _ = self.samples[idx]
+        raw_len = 1 + len(prompt_b) + len(target_b) + 1
+        assert raw_len <= self.cfg.max_seq_len, (
+            f"Error de longitud: secuencia completa ({raw_len} bytes) "
+            f"supera max_seq_len ({self.cfg.max_seq_len}). "
+            f"Abortando para prevenir truncamiento silencioso de registros o respuesta."
+        )
+
         seq = [self.cfg.bos_token_id] + list(prompt_b) + list(target_b) + [self.cfg.eos_token_id]
         prompt_len = 1 + len(prompt_b)
 

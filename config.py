@@ -18,15 +18,16 @@ class HybridConfig:
     eos_token_id: int = 259
 
     # Dimensiones de secuencia y bloques causales (CDLM + GQA)
-    max_seq_len: int = 128           # 8 bloques de 16 bytes (soporte nativo para trazas de scratchpad)
-    block_size: int = 16             # 8 bloques de 16 bytes
+    max_seq_len: int = 160           # 10 bloques de 16 bytes (soporte garantizado para entrada enriquecida de Opción A)
+    block_size: int = 16             # 10 bloques de 16 bytes
     d_model: int = 192
     n_heads: int = 4
     n_kv_heads: int = 2
     d_ff_expert: int = 384
 
-    # Principio 0: Traza supervisada compacta (Scratchpad / Working Registers)
-    use_scratchpad: bool = True      # Si True, incluye sub_w y sub_ms antes de watt y ms con consistencia aditiva
+    # Principio 0: Traza supervisada compacta y Operandos Explícitos (Hito 2 / Opción A)
+    use_scratchpad: bool = True      # Si True, incluye pw y pms antes de watt y ms con consistencia aditiva
+    use_explicit_operands: bool = False # Opción A: proporciona operandos numéricos bw, mw, aw, ow, bms, mms, ams, oms en prompt
 
     # Principio 1: Capas ternarias BitLinear (W1.58A8) y Paginación BITCOS
     activation_bits: int = 8
