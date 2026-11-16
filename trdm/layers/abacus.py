@@ -1,0 +1,66 @@
+import torch
+import torch.nn as nn
+
+
+def extract_abacus_ranks(input_ids: torch.Tensor, delimiter_rank: int = 15, max_rank: int = 14) -> torch.Tensor:
+    """
+    Calcula de forma 100% vectorizada en PyTorch los rangos decimales relativos
+    (0=unidades, 1=decenas, 2=centenas, ...) para cada token numérico ASCII ('0'..'9', 48..57)
+    de derecha a izquierda, conforme a la formulación de McLeish et al. (NeurIPS 2024).
+
+    Los tokens no numéricos (delimitadores, letras, padding) se asignan al rango 'delimiter_rank'.
+
+    Args:
+        input_ids: Tensor de enteros de dimensiones (B, L).
+        delimiter_rank: Índice reservado para tokens no numéricos (por defecto 15).
+        max_rank: Límite superior de rango decimal (por defecto 14, para números de hasta 15 cifras).
+
+    Returns:
+        Tensor de enteros (B, L) con el rango decimal de cada token.
+    """
+    is_digit = (input_ids >= 48) & (input_ids <= 57)
+
+    # Invertir la dimensión temporal para procesar de menor a mayor significancia (unidades -> centenas)
+    rev = is_digit.flip(dims=[1])
+
+    # Algoritmo de suma acumulativa con reinicio por vectorización pura en GPU/CPU
+    cs = rev.long().cumsum(dim=1)
+    resets = torch.where(~rev, cs, torch.zeros_like(cs))
+    last_reset = resets.cummax(dim=1).values
+    ranks_rev = cs - last_reset - 1
+
+    # Acotar al rango máximo y asignar rango de delimitador a no dígitos
+    ranks_rev = torch.clamp(ranks_rev, 0, max_rank)
+    ranks_rev = torch.where(rev, ranks_rev, torch.full_like(ranks_rev, delimiter_rank))
+
+    # Revertir a la orientación original de la secuencia
+    return ranks_rev.flip(dims=[1])
+
+
+class AbacusEmbedding(nn.Module):
+    """
+    Capa de Abacus Positional Embedding que proyecta los rangos decimales de los números
+    a vectores de dimensión d_model para dotar al Transformer de conciencia de orden de magnitud.
+    """
+    def __init__(self, d_model: int, max_ranks: int = 16, delimiter_rank: int = 15):
+        super().__init__()
+        self.d_model = d_model
+        self.max_ranks = max_ranks
+        self.delimiter_rank = delimiter_rank
+        self.embed = nn.Embedding(max_ranks, d_model)
+
+        # Inicialización normal con dispersión baja para actuar como sesgo posicional estable
+        nn.init.normal_(self.embed.weight, mean=0.0, std=0.02)
+
+    def forward(self, input_ids: torch.Tensor) -> torch.Tensor:
+        """
+        Calcula los vectores de incrustación de ábaco para los tokens de entrada.
+
+        Args:
+            input_ids: Tensor (B, L) con los IDs de tokens (0..259).
+
+        Returns:
+            Tensor (B, L, d_model) con las incrustaciones de ábaco.
+        """
+        ranks = extract_abacus_ranks(input_ids, delimiter_rank=self.delimiter_rank)
+        return self.embed(ranks)

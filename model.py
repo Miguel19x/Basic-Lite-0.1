@@ -17,8 +17,10 @@ from trdm.modules.mla_attention import MultiHeadLatentAttention
 from trdm.modules.moe import TernaryExpert, ExpertChoiceMoE
 from trdm.modules.paged_moe import MemoryAwarePagedMoE
 from trdm.modules.recursive_core import SharedDualStateRecursiveCore
+from trdm.layers.abacus import AbacusEmbedding, extract_abacus_ranks
 from trdm.models.trdm_v4 import TernaryRecursiveDiffusionLM
 from trdm.models.trdm_v5 import TernaryRecursiveDiffusionLM_v5, SharedResidentTernaryCore
+from trdm.models.trdm_v6_causal import TRDMv6CausalModel
 from trdm.serialization.bitcos import export_bitcos_archive, load_bitcos_archive
 from trdm.serialization.paged_bitcos import PagedBitCOSSerializer, PagedBitCOSReader
 
@@ -30,6 +32,8 @@ __all__ = [
     "RotaryEmbedding",
     "SinusoidalStepEncoding",
     "BitLinear",
+    "AbacusEmbedding",
+    "extract_abacus_ranks",
     "HierarchicalBytePatcher",
     "BlockCausalGQATernaryAttention",
     "MultiHeadLatentAttention",
@@ -41,6 +45,7 @@ __all__ = [
     "SharedResidentTernaryCore",
     "TernaryRecursiveDiffusionLM",
     "TernaryRecursiveDiffusionLM_v5",
+    "TRDMv6CausalModel",
     "export_bitcos_archive",
     "load_bitcos_archive",
     "PagedBitCOSSerializer",
