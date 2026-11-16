@@ -13,8 +13,10 @@ __pycache__/
 *.so
 .ninja*
 
-# Checkpoints antiguos
-trdm_checkpoint.pt
+# Checkpoints y binarios de modelos
+*.pt
+*.bin
+context_archive.db
 
 # OS specific files
 .DS_Store
