@@ -146,6 +146,9 @@ def compute_v4_hybrid_loss(
         for lg, h_prob in zip(intermediate_logits, halt_probs_list):
             is_correct = (lg.detach().argmax(dim=-1) == x_0).float().unsqueeze(-1)
             halt_target = 0.1 + 0.9 * is_correct
+            if h_prob.shape[1] != halt_target.shape[1] and halt_target.shape[1] % h_prob.shape[1] == 0:
+                p_sz = halt_target.shape[1] // h_prob.shape[1]
+                halt_target = halt_target.view(B, h_prob.shape[1], p_sz, 1).mean(dim=2)
             ponder_terms.append(F.mse_loss(h_prob, halt_target))
         loss_ponder = sum(ponder_terms) / len(ponder_terms)
 

@@ -70,7 +70,15 @@ class SharedResidentTernaryCore(nn.Module):
             noise_pair = torch.stack([t_noise, delta_t], dim=-1)
             e_t = self.noise_mlp(noise_pair).unsqueeze(1)
         elif t_noise.dim() == 2:
-            noise_pair = torch.stack([t_noise, delta_t], dim=-1)
+            L_in = t_noise.shape[1]
+            L_core = z_r.shape[1]
+            if L_in != L_core and L_in % L_core == 0:
+                step_down = L_in // L_core
+                t_down = t_noise[:, ::step_down]
+                dt_down = delta_t[:, ::step_down] if delta_t.dim() == 2 else delta_t
+            else:
+                t_down, dt_down = t_noise, delta_t
+            noise_pair = torch.stack([t_down, dt_down], dim=-1)
             e_t = self.noise_mlp(noise_pair)
         else:
             e_t = self.noise_mlp(torch.stack([t_noise, delta_t], dim=-1))
@@ -324,6 +332,51 @@ class TernaryRecursiveDiffusionLM_v5(nn.Module):
             carried_states=carried_states,
             last_hidden_state=y_r,
         )
+
+    def configure_adamw_groups(self) -> List[Dict]:
+        """Configuración de decaimiento desacoplado de pesos (no-decay en normas, escalas y BitLinear)."""
+        bitlinear_param_ids = {
+            id(p) for m in self.modules() if isinstance(m, BitLinear) for p in m.parameters()
+        }
+        decay, no_decay = [], []
+        for name, param in self.named_parameters():
+            if not param.requires_grad:
+                continue
+            if (
+                param.ndim < 2
+                or id(param) in bitlinear_param_ids
+                or "emb" in name
+                or "norm" in name
+                or "alpha" in name
+                or "beta" in name
+                or "gate" in name
+                or "patcher" in name
+            ):
+                no_decay.append(param)
+            else:
+                decay.append(param)
+        return [
+            {"params": decay, "weight_decay": self.cfg.weight_decay},
+            {"params": no_decay, "weight_decay": 0.0},
+        ]
+
+    def collect_ternary_telemetry(self) -> Dict[str, float]:
+        stats_list = [m.last_stats for m in self.modules() if isinstance(m, BitLinear) and m.last_stats]
+        if not stats_list:
+            return {}
+        avg_scale = sum(s.get("scale_w", 0.0) for s in stats_list) / len(stats_list)
+        avg_sparsity = sum(s.get("zero_frac", s.get("weight_sparsity", 0.0)) for s in stats_list) / len(stats_list)
+        avg_bpw = sum(s.get("bitcos_bpw", 1.58) for s in stats_list) / len(stats_list)
+        moe_active = 1.0
+        if hasattr(self.resident_core, "paged_moe"):
+            moe_stats = self.resident_core.paged_moe.get_last_telemetry()
+            moe_active = moe_stats.get("active_slot_ratio", 1.0)
+        return {
+            "scale_w": avg_scale,
+            "weight_sparsity": avg_sparsity,
+            "bitcos_bpw": avg_bpw,
+            "moe_active_slot_ratio": moe_active,
+        }
 
     def export_paged_bitcos(self, path: str, page_size: int = 4096, format_type: str = "compact") -> Dict[str, Any]:
         """Exporta el modelo a formato Paged BitCOS v1 alineado a páginas."""

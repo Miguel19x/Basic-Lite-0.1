@@ -167,3 +167,10 @@ class MemoryAwarePagedMoE(nn.Module):
 
         self.last_selected_experts = list(active_experts_in_step)
         return (out_flat.view(B, L, D) + shared_out), curr_node_ids
+
+    def get_last_telemetry(self) -> Dict[str, Any]:
+        sel = getattr(self, "last_selected_experts", [])
+        return {
+            "selected_experts": sel,
+            "active_slot_ratio": len(sel) / max(1, self.num_experts),
+        }

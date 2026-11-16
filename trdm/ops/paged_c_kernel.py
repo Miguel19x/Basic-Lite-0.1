@@ -1,0 +1,128 @@
+import ctypes
+import os
+from pathlib import Path
+import subprocess
+from typing import List, Tuple
+import torch
+
+_LIB_PAGED_INSTANCE = None
+
+
+def get_paged_c_lib() -> ctypes.CDLL:
+    global _LIB_PAGED_INSTANCE
+    if _LIB_PAGED_INSTANCE is not None:
+        return _LIB_PAGED_INSTANCE
+
+    curr_dir = Path(__file__).resolve().parent.parent.parent
+    c_path = curr_dir / "paged_gemm_kernel.c"
+    so_path = curr_dir / "libpaged_gemm.so"
+
+    if not so_path.exists() or (c_path.exists() and c_path.stat().st_mtime > so_path.stat().st_mtime):
+        cmd = [
+            "gcc",
+            "-O3",
+            "-march=native",
+            "-fopenmp",
+            "-shared",
+            "-fPIC",
+            str(c_path),
+            "-o",
+            str(so_path),
+        ]
+        res = subprocess.run(cmd, capture_output=True, text=True)
+        if res.returncode != 0:
+            raise RuntimeError(f"Error compilando paged_gemm_kernel.c:\n{res.stderr}")
+
+    lib = ctypes.CDLL(str(so_path))
+    lib.paged_direct_matmul_fast_c.argtypes = [
+        ctypes.c_char_p,  # x [M, K]
+        ctypes.c_char_p,  # page_blob
+        ctypes.c_void_p,  # out [M, rows]
+        ctypes.c_int64,   # M
+        ctypes.c_int64,   # K
+    ]
+    lib.paged_direct_matmul_fast_c.restype = None
+
+    lib.paged_direct_matmul_fast_c_multi.argtypes = [
+        ctypes.c_char_p,                            # x [M, K]
+        ctypes.POINTER(ctypes.c_char_p),           # array of page_blobs
+        ctypes.c_int64,                            # num_pages
+        ctypes.c_void_p,                            # out [M, total_out_features]
+        ctypes.c_int64,                            # M
+        ctypes.c_int64,                            # K
+        ctypes.c_int64,                            # total_out_features
+    ]
+    lib.paged_direct_matmul_fast_c_multi.restype = None
+
+    _LIB_PAGED_INSTANCE = lib
+    return lib
+
+
+def paged_direct_block_matmul_fast_c(
+    q_x_int8: torch.Tensor,
+    page_bytes: bytes,
+) -> Tuple[int, int, float, torch.Tensor]:
+    """
+    Ejecución fisionada C de multiplicación de una página individual (formato 'fast').
+    """
+    import struct
+    header_fmt = "<IIHHfII"
+    header_size = struct.calcsize(header_fmt)
+    row_start, rows, cols, fmt_code, scale_w, len_p1, len_p2 = struct.unpack(
+        header_fmt, page_bytes[:header_size]
+    )
+    assert fmt_code == 1, f"El kernel C fast solo admite fmt_code=1, recibido: {fmt_code}"
+
+    orig_shape = q_x_int8.shape
+    q_2d = q_x_int8.view(-1, orig_shape[-1]).contiguous()
+    M, K = q_2d.shape
+    assert K == cols, f"Dimensión K ({K}) no coincide con cols de página ({cols})"
+
+    out_int32 = torch.empty((M, rows), dtype=torch.int32, device=q_x_int8.device)
+
+    lib = get_paged_c_lib()
+    lib.paged_direct_matmul_fast_c(
+        ctypes.cast(q_2d.data_ptr(), ctypes.c_char_p),
+        page_bytes,
+        ctypes.c_void_p(out_int32.data_ptr()),
+        M,
+        K,
+    )
+
+    final_shape = list(orig_shape[:-1]) + [rows]
+    return row_start, rows, scale_w, out_int32.view(*final_shape)
+
+
+def paged_direct_matmul_fast_c_multi(
+    q_x_int8: torch.Tensor,
+    pages_list: List[bytes],
+    total_out_features: int,
+) -> torch.Tensor:
+    """
+    Ejecución Fisionada Multi-Página de alto rendimiento:
+    Procesa todas las páginas del tensor en un único pase C con OpenMP dinámico,
+    escribiendo directamente en un único búfer de salida [..., total_out_features].
+    Cero copias, cero concatenaciones intermedias en Python.
+    """
+    orig_shape = q_x_int8.shape
+    q_2d = q_x_int8.view(-1, orig_shape[-1]).contiguous()
+    M, K = q_2d.shape
+
+    out_int32 = torch.empty((M, total_out_features), dtype=torch.int32, device=q_x_int8.device)
+
+    num_pages = len(pages_list)
+    page_ptrs = (ctypes.c_char_p * num_pages)(*pages_list)
+
+    lib = get_paged_c_lib()
+    lib.paged_direct_matmul_fast_c_multi(
+        ctypes.cast(q_2d.data_ptr(), ctypes.c_char_p),
+        page_ptrs,
+        num_pages,
+        ctypes.c_void_p(out_int32.data_ptr()),
+        M,
+        K,
+        total_out_features,
+    )
+
+    final_shape = list(orig_shape[:-1]) + [total_out_features]
+    return out_int32.view(*final_shape)
