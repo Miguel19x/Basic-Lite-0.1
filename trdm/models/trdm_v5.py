@@ -272,7 +272,8 @@ class TernaryRecursiveDiffusionLM_v5(nn.Module):
 
             delta = 1.0
             with torch.no_grad():
-                delta = float(((y_next - y_r).norm() / (y_r.norm() + 1e-4)).item())
+                ref_norm = y_r.norm() if r > 0 else a.norm()
+                delta = float(((y_next - y_r).norm() / (ref_norm + 1e-4)).item())
                 deltas.append(delta)
 
             z_r, y_r = z_next, y_next

@@ -22,7 +22,8 @@ class MemoryAwarePagedMoE(nn.Module):
         self.cfg = cfg
         self.num_experts = cfg.num_experts
         self.capacity_factor = cfg.capacity_factor
-        self.block_size = cfg.block_size
+        patch_sz = getattr(cfg, "byte_patch_size", 1) if getattr(cfg, "use_byte_patching", True) else 1
+        self.block_size = max(1, cfg.block_size // patch_sz)
         self.min_gate_threshold = getattr(cfg, "min_gate_threshold", 1e-4)
 
         self.router = nn.Linear(cfg.d_model, cfg.num_experts, bias=False)

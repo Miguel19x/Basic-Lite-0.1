@@ -24,7 +24,10 @@ class MultiHeadLatentAttention(nn.Module):
         self.d_model = cfg.d_model
         self.n_heads = cfg.n_heads
         self.head_dim = cfg.d_model // cfg.n_heads
-        self.block_size = cfg.block_size
+
+        # Si se utiliza byte patching, la atención opera sobre parches: ajustar block_size a parches
+        patch_sz = getattr(cfg, "byte_patch_size", 1) if getattr(cfg, "use_byte_patching", True) else 1
+        self.block_size = max(1, cfg.block_size // patch_sz)
 
         # Dimensión de compresión latente de KV (MLA)
         self.d_c = getattr(cfg, "mla_latent_dim", max(16, cfg.d_model // 4))

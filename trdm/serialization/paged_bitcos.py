@@ -303,6 +303,84 @@ class PagedBitCOSReader:
         """Retorna las páginas que componen a un experto determinado."""
         return self.expert_map.get(str(expert_id), [])
 
+    def load_into_model(self, model: nn.Module) -> int:
+        """
+        Carga íntegramente los parámetros residentes y las páginas ternarias
+        desde el archivo Paged BitCOS hacia una instancia de modelo vacía/limpia.
+        """
+        from trdm.layers.bitlinear import BitLinear
+        from trdm.ops.paged_kernel import unpack_page_to_dense
+
+        # 1. Cargar tensores residentes (embeddings, normas, MLPs de ruido)
+        loaded_resident = 0
+        with torch.no_grad():
+            for name, param in model.named_parameters():
+                arr = self.read_resident_tensor(name)
+                if arr is not None:
+                    param.data.copy_(torch.from_numpy(arr))
+                    loaded_resident += 1
+
+        # 2. Cargar capas ternarias BitLinear desde las páginas
+        loaded_bitlinear = 0
+        named_modules = dict(model.named_modules())
+        for name, module in named_modules.items():
+            if isinstance(module, BitLinear):
+                info = self.tensors_map.get(name)
+                if info and not info.get("is_resident", False):
+                    out_f, in_f = info["shape"]
+                    scale_val = info["scale"]
+                    full_codes = torch.zeros(out_f, in_f, dtype=torch.int8)
+
+                    for pid in info["page_ids"]:
+                        page_bytes = self.read_page_bytes(pid)
+                        r_s, r_cnt, _, sc, codes = unpack_page_to_dense(page_bytes)
+                        full_codes[r_s : r_s + r_cnt, :] = codes
+
+                    module.int8_codes.copy_(full_codes)
+                    module.packed_scale.fill_(scale_val)
+                    module.cached_w_eff = full_codes.to(torch.float32) * scale_val
+                    module.cached_pos_mask = (full_codes == 1).to(torch.float32)
+                    module.cached_neg_mask = (full_codes == -1).to(torch.float32)
+                    module.weight.data.copy_(module.cached_w_eff)
+                    module.use_loaded_bitcos = True
+                    loaded_bitlinear += 1
+
+        return loaded_resident + loaded_bitlinear
+
+    def get_accounting_breakdown(self) -> Dict[str, Any]:
+        """
+        Desglosa con precisión contable cada sección del archivo binario Paged BitCOS.
+        Aclara la discrepancia entre el tamaño de páginas ternarias y el tamaño total del binario.
+        """
+        header_len = self.idx_offset
+        idx_len = self.exp_offset - self.idx_offset
+        exp_len = self.res_offset - self.exp_offset
+        res_len = self.pages_offset - self.res_offset  # Incluye parámetros residentes FP32 + padding de alineación
+        pages_len = self.total_size - self.pages_offset
+
+        # Desglose de parámetros residentes en FP32
+        res_params_count = sum(1 for t in self.index_data["tensors"] if t.get("is_resident", False))
+        res_params_bytes = sum(t["length"] for t in self.index_data["tensors"] if t.get("is_resident", False))
+        padding_bytes = (self.pages_offset - self.res_offset) - res_params_bytes
+
+        return {
+            "total_file_bytes": self.total_size,
+            "header_bytes": header_len,
+            "tensor_index_json_bytes": idx_len,
+            "expert_index_json_bytes": exp_len,
+            "resident_fp32_params_count": res_params_count,
+            "resident_fp32_params_bytes": res_params_bytes,
+            "alignment_padding_bytes": padding_bytes,
+            "ternary_pages_count": self.total_pages,
+            "ternary_pages_bytes": pages_len,
+            "page_size": self.page_size,
+            "format": self.format_type,
+            "budget_30b_gb": {
+                "ideal_ternary_log2_3_bits_gb": 5.94,
+                "current_fast_2bit_lut_gb": round(30.0 * 2.0 / 8.0, 2),
+            },
+        }
+
     def close(self) -> None:
         if hasattr(self, "_mm") and self._mm is not None:
             self._mm.close()

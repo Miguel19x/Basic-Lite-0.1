@@ -125,11 +125,21 @@ class HierarchicalContextManager:
         """
         Recupera fragmentos originales del Nivel 3 (Archivo) basados en coincidencias
         de palabras clave o términos específicos (evita degradación o pérdida de datos históricos).
+        Filtra stopwords para evitar falsos positivos con palabras cortas de relleno.
         """
         self.retrieval_queries_count += 1
-        query_terms = [q.strip(":, \n\t") for q in query.split() if len(q.strip(":, \n\t")) > 1]
+        stopwords = {
+            "de", "la", "el", "es", "en", "un", "del", "al", "los", "las",
+            "cual", "por", "para", "con", "una", "unos", "unas", "que", "se",
+        }
+        raw_terms = [q.strip(":, \n\t?¿!¡") for q in query.split()]
+        query_terms = [q for q in raw_terms if len(q) > 1 and q.lower() not in stopwords]
+
         if not query_terms:
             return []
+
+        # Priorizar términos específicos (ej. identificadores con guion bajo o longitud > 4)
+        query_terms.sort(key=lambda x: (1 if "_" in x else 0, len(x)), reverse=True)
 
         cursor = self.conn.cursor()
         results = []
@@ -155,7 +165,8 @@ class HierarchicalContextManager:
                 }
                 if not any(x["chunk_id"] == item["chunk_id"] for x in results):
                     results.append(item)
-            if len(results) >= top_k:
+            # Si encontramos coincidencias para el término más específico (ej. nombre de nodo), no diluir con términos genéricos
+            if results:
                 break
 
         if results:
