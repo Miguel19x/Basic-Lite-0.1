@@ -1,0 +1,313 @@
+import io
+import mmap
+import os
+import struct
+from typing import Any, Dict, List, Optional, Tuple, Union
+import numpy as np
+import torch
+import torch.nn as nn
+
+from trdm.layers.bitlinear import BitLinear
+
+
+# Magic identificador para el formato de ejecución por páginas (Paged BitCOS v1)
+MAGIC_PBITCOS = b"PBITCOS1"
+DEFAULT_PAGE_SIZE = 4096  # 4 KB por página, óptimo para paginación de SO y lecturas alineadas SSD
+
+
+class PagedBitCOSSerializer:
+    """
+    Serializador y motor de paginación para pesos ternarios.
+    Estructura del archivo:
+      [0..64]   Cabecera principal (Magic, versión, page_size, offsets y metadatos)
+      [Offset]  Índice de tensores (nombres, shapes, escalas, lista de páginas)
+      [Offset]  Índice de expertos (mapeo expert_id -> páginas necesarias)
+      [Offset]  Embeddings y normalizaciones (pesos pequeños 100% residentes en RAM)
+      [Offset]  Páginas de matrices ternarias alineadas a page_size
+    """
+
+    @staticmethod
+    def pack_ternary_page(
+        row_start: int,
+        out_features: int,
+        in_features: int,
+        scale_w: float,
+        q_w_chunk: np.ndarray,
+        page_size: int = DEFAULT_PAGE_SIZE,
+        format_type: str = "compact",
+    ) -> bytes:
+        """
+        Empaqueta un bloque de filas de la matriz ternaria en una página fija.
+        - compact: presencia (1 bit) + signos de no-ceros (1 bit).
+        - fast: 2 bits directos por peso {-1: 00, 0: 01, +1: 10} optimizado para decodificación veloz.
+        """
+        rows, cols = q_w_chunk.shape
+        flat = q_w_chunk.flatten().astype(np.int8)
+        num_weights = flat.size
+
+        if format_type == "compact":
+            presence_bits = (flat != 0).astype(np.uint8)
+            nonzero_vals = flat[flat != 0]
+            sign_bits = (nonzero_vals > 0).astype(np.uint8)
+
+            packed_presence = np.packbits(presence_bits).tobytes()
+            packed_signs = np.packbits(sign_bits).tobytes()
+            payload = packed_presence + packed_signs
+            fmt_code = 0
+            len_p1 = len(packed_presence)
+            len_p2 = len(packed_signs)
+        else:  # 'fast'
+            # Mapeo: -1 -> 0, 0 -> 1, +1 -> 2 (cabe en 2 bits)
+            codes = (flat + 1).astype(np.uint8) & 0x03
+            # Empaquetar 4 pesos por byte
+            padded_len = (num_weights + 3) // 4 * 4
+            if padded_len > num_weights:
+                codes = np.pad(codes, (0, padded_len - num_weights), constant_values=1)
+            b0 = codes[0::4]
+            b1 = codes[1::4] << 2
+            b2 = codes[2::4] << 4
+            b3 = codes[3::4] << 6
+            packed = (b0 | b1 | b2 | b3).tobytes()
+            payload = packed
+            fmt_code = 1
+            len_p1 = len(packed)
+            len_p2 = 0
+
+        header_fmt = "<IIHHfII"
+        header_bytes = struct.pack(
+            header_fmt,
+            row_start,
+            rows,
+            cols,
+            fmt_code,
+            float(scale_w),
+            len_p1,
+            len_p2,
+        )
+        page_data = header_bytes + payload
+        if len(page_data) > page_size:
+            raise ValueError(
+                f"El bloque ({rows}x{cols}) supera el tamaño de página {page_size} bytes ({len(page_data)} bytes)"
+            )
+        # Relleno hasta el límite exacto de la página
+        padding = bytes(page_size - len(page_data))
+        return page_data + padding
+
+    @classmethod
+    def export_paged_model(
+        cls,
+        model: nn.Module,
+        output_path: str,
+        page_size: int = DEFAULT_PAGE_SIZE,
+        format_type: str = "compact",
+    ) -> Dict[str, Any]:
+        """
+        Exporta el modelo a un archivo binario Paged BitCOS alineado a páginas.
+        Separa componentes residentes (embeddings, normas) de páginas ternarias (pesos de proyección y expertos).
+        """
+        tensor_index: List[Dict[str, Any]] = []
+        expert_index: Dict[int, List[int]] = {}
+        resident_bytes = io.BytesIO()
+        pages_bytes = io.BytesIO()
+
+        current_page_id = 0
+        named_modules = dict(model.named_modules())
+
+        for name, module in named_modules.items():
+            if isinstance(module, BitLinear):
+                # Extraer pesos cuantizados y escala
+                with torch.no_grad():
+                    w_eff, q_w, scale_w = module.quantize_weights()
+                    codes_np = q_w.cpu().numpy().astype(np.int8)
+                    scale_val = float(scale_w.item())
+
+                out_f, in_f = codes_np.shape
+                # Calcular cuántas filas caben por página de page_size
+                # En compact, cada peso ocupa ~1.58 bits, redondeamos con margen seguro
+                bytes_per_weight_est = 0.25 if format_type == "compact" else 0.26
+                row_bytes_est = int(in_f * bytes_per_weight_est) + 32
+                rows_per_page = max(1, (page_size - 64) // max(1, int(in_f * 0.25) + 4))
+
+                tensor_pages = []
+                for r_start in range(0, out_f, rows_per_page):
+                    r_end = min(out_f, r_start + rows_per_page)
+                    chunk = codes_np[r_start:r_end, :]
+                    page_blob = cls.pack_ternary_page(
+                        row_start=r_start,
+                        out_features=out_f,
+                        in_features=in_f,
+                        scale_w=scale_val,
+                        q_w_chunk=chunk,
+                        page_size=page_size,
+                        format_type=format_type,
+                    )
+                    pages_bytes.write(page_blob)
+                    tensor_pages.append(current_page_id)
+                    current_page_id += 1
+
+                is_expert = "expert" in name
+                if is_expert:
+                    # Detectar ID del experto
+                    parts = name.split(".")
+                    exp_id = -1
+                    for p in parts:
+                        if p.isdigit():
+                            exp_id = int(p)
+                            break
+                        elif p.startswith("expert_") or p == "shared_expert":
+                            exp_id = 999 if p == "shared_expert" else -1
+                    if exp_id != -1:
+                        expert_index.setdefault(exp_id, []).extend(tensor_pages)
+
+                tensor_index.append({
+                    "name": name,
+                    "shape": [out_f, in_f],
+                    "is_resident": False,
+                    "scale": scale_val,
+                    "num_pages": len(tensor_pages),
+                    "page_ids": tensor_pages,
+                })
+
+        # Serializar parámetros residentes (normas, embeddings, gates)
+        for name, param in model.named_parameters():
+            # Si no es peso de BitLinear
+            is_bitlinear_weight = any(
+                name == f"{mod_name}.weight"
+                for mod_name, mod in named_modules.items()
+                if isinstance(mod, BitLinear)
+            )
+            if not is_bitlinear_weight and param.requires_grad:
+                p_np = param.detach().cpu().numpy().astype(np.float32)
+                p_bytes = p_np.tobytes()
+                p_offset = resident_bytes.tell()
+                resident_bytes.write(p_bytes)
+                tensor_index.append({
+                    "name": name,
+                    "shape": list(p_np.shape),
+                    "is_resident": True,
+                    "offset": p_offset,
+                    "length": len(p_bytes),
+                    "dtype": "float32",
+                })
+
+        # Serializar índices en bloques JSON/Binario
+        import json
+        idx_json = json.dumps({"tensors": tensor_index, "format": format_type}).encode("utf-8")
+        exp_json = json.dumps({"experts": expert_index}).encode("utf-8")
+
+        # Construir archivo final
+        header_size = 64
+        idx_offset = header_size
+        idx_len = len(idx_json)
+        exp_offset = idx_offset + idx_len
+        exp_len = len(exp_json)
+        res_offset = exp_offset + exp_len
+        res_len = resident_bytes.tell()
+        # Alinear pages_offset al tamaño de página
+        raw_pages_offset = res_offset + res_len
+        pages_offset = ((raw_pages_offset + page_size - 1) // page_size) * page_size
+        padding_to_pages = bytes(pages_offset - raw_pages_offset)
+
+        total_pages = current_page_id
+        fmt_code = 0 if format_type == "compact" else 1
+
+        header_blob = struct.pack(
+            "<8sIIIQQQQQ",
+            MAGIC_PBITCOS,
+            page_size,
+            fmt_code,
+            total_pages,
+            idx_offset,
+            exp_offset,
+            res_offset,
+            pages_offset,
+            pages_offset + pages_bytes.tell(),
+        )
+        if len(header_blob) < header_size:
+            header_blob += bytes(header_size - len(header_blob))
+
+        with open(output_path, "wb") as f:
+            f.write(header_blob)
+            f.write(idx_json)
+            f.write(exp_json)
+            f.write(resident_bytes.getvalue())
+            f.write(padding_to_pages)
+            f.write(pages_bytes.getvalue())
+
+        total_file_size = os.path.getsize(output_path)
+        return {
+            "path": output_path,
+            "total_pages": total_pages,
+            "page_size": page_size,
+            "format": format_type,
+            "total_bytes": total_file_size,
+            "tensors_count": len(tensor_index),
+            "experts_count": len(expert_index),
+        }
+
+
+class PagedBitCOSReader:
+    """
+    Lector de alto rendimiento para Paged BitCOS.
+    Permite acceso por demanda a páginas individuales vía mmap o seek sin cargar el modelo completo en RAM.
+    """
+
+    def __init__(self, file_path: str):
+        self.file_path = file_path
+        self._f = open(file_path, "rb")
+        self._mm = mmap.mmap(self._f.fileno(), 0, access=mmap.ACCESS_READ)
+        self._parse_header()
+
+    def _parse_header(self) -> None:
+        header_size = struct.calcsize("<8sIIIQQQQQ")
+        magic, page_sz, fmt_code, total_pgs, idx_off, exp_off, res_off, pgs_off, total_sz = (
+            struct.unpack("<8sIIIQQQQQ", self._mm[:header_size])
+        )
+        assert magic == MAGIC_PBITCOS, f"Magic inválido: {magic}"
+        self.page_size = page_sz
+        self.format_type = "compact" if fmt_code == 0 else "fast"
+        self.total_pages = total_pgs
+        self.idx_offset = idx_off
+        self.exp_offset = exp_off
+        self.res_offset = res_off
+        self.pages_offset = pgs_off
+        self.total_size = total_sz
+
+        import json
+        idx_data = self._mm[idx_off:exp_off].decode("utf-8")
+        self.index_data = json.loads(idx_data)
+        self.tensors_map = {t["name"]: t for t in self.index_data["tensors"]}
+
+        exp_data = self._mm[exp_off:res_off].decode("utf-8")
+        self.expert_map = json.loads(exp_data)["experts"]
+
+    def read_page_bytes(self, page_id: int) -> bytes:
+        """Lee una sola página de 4KB desde el archivo mapeado en memoria (cero sobrecarga de descompresión global)."""
+        if page_id >= self.total_pages:
+            raise IndexError(f"Page ID {page_id} fuera de rango ({self.total_pages})")
+        start = self.pages_offset + page_id * self.page_size
+        return self._mm[start : start + self.page_size]
+
+    def read_resident_tensor(self, name: str) -> Optional[np.ndarray]:
+        """Recupera un tensor residente (FP32) directamente del archivo."""
+        info = self.tensors_map.get(name)
+        if not info or not info.get("is_resident", False):
+            return None
+        start = self.res_offset + info["offset"]
+        length = info["length"]
+        raw = self._mm[start : start + length]
+        arr = np.frombuffer(raw, dtype=np.float32).reshape(info["shape"])
+        return arr.copy()
+
+    def get_expert_pages(self, expert_id: int) -> List[int]:
+        """Retorna las páginas que componen a un experto determinado."""
+        return self.expert_map.get(str(expert_id), [])
+
+    def close(self) -> None:
+        if hasattr(self, "_mm") and self._mm is not None:
+            self._mm.close()
+        if hasattr(self, "_f") and self._f is not None:
+            self._f.close()
+
+    def __del__(self) -> None:
+        self.close()

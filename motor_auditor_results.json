@@ -1,0 +1,122 @@
+{
+  "fecha": "2026-11-16 02:05:13",
+  "prueba_1_matriz_empaquetada": {
+    "dimensions": "384x192",
+    "dense_fp32_bytes": 294912,
+    "paged_compact_bytes": 20480,
+    "paged_fast_bytes": 20480,
+    "compression_compact_x": 14.4,
+    "compression_fast_x": 14.4,
+    "lat_fp32_reconstruction_ms": 1.007,
+    "lat_paged_compact_ms": 0.8,
+    "lat_paged_fast_ms": 0.214,
+    "speedup_fast_vs_reconstruction": 4.69,
+    "numerical_exact_agreement": true,
+    "correlation_with_fp32": 0.999974
+  },
+  "prueba_2_expertos_ram": {
+    "blind_telemetry": {
+      "total_queries": 100,
+      "cache_hits": 35,
+      "cache_misses": 65,
+      "cache_hit_rate_pct": 35.0,
+      "resident_experts": [
+        5,
+        3
+      ],
+      "max_resident_budget": 2,
+      "evictions_count": 65,
+      "bytes_transferred_kb": 2080.0,
+      "simulated_io_latency_ms": 1.065,
+      "escapes_triggered": 0
+    },
+    "aware_telemetry": {
+      "total_queries": 100,
+      "cache_hits": 87,
+      "cache_misses": 13,
+      "cache_hit_rate_pct": 87.0,
+      "resident_experts": [
+        1,
+        5
+      ],
+      "max_resident_budget": 2,
+      "evictions_count": 13,
+      "bytes_transferred_kb": 416.0,
+      "simulated_io_latency_ms": 0.213,
+      "escapes_triggered": 1
+    },
+    "traffic_reduction_pct": 80.0
+  },
+  "prueba_3_contexto_jerarquico": {
+    "telemetry": {
+      "active_tokens_in_ram": 128,
+      "compressed_segments_count": 23,
+      "archived_chunks_on_disk": 23,
+      "total_tokens_ingested": 767,
+      "active_ram_footprint_bytes": 128,
+      "equivalent_full_context_bytes": 767,
+      "ram_saving_ratio": 5.99,
+      "retrieval_hit_rate_pct": 100.0
+    },
+    "retired_to_archive": true,
+    "exact_retrieval_success": true
+  },
+  "prueba_4_computo_adaptativo": {
+    "r_easy": 3,
+    "r_hard": 4,
+    "deltas": [
+      23043.3945,
+      0.9683,
+      0.4983
+    ],
+    "latency_easy_ms": 13.1,
+    "latency_hard_ms": 13.82,
+    "speedup_pct": 5.16
+  },
+  "prueba_5_integracion": {
+    "paged_bitcos_export": {
+      "path": "test_trdm_v5_paged.bin",
+      "total_pages": 63,
+      "page_size": 4096,
+      "format": "compact",
+      "total_bytes": 2162688,
+      "tensors_count": 62,
+      "experts_count": 5
+    },
+    "inference_latency_ms": 8.01,
+    "telemetry": {
+      "weight_movement": {
+        "total_queries": 8,
+        "cache_hits": 4,
+        "cache_misses": 4,
+        "cache_hit_rate_pct": 50.0,
+        "resident_experts": [
+          2,
+          0
+        ],
+        "max_resident_budget": 2,
+        "evictions_count": 2,
+        "bytes_transferred_kb": 128.0,
+        "simulated_io_latency_ms": 0.066,
+        "escapes_triggered": 0
+      },
+      "hierarchical_context": {
+        "active_tokens_in_ram": 0,
+        "compressed_segments_count": 0,
+        "archived_chunks_on_disk": 0,
+        "total_tokens_ingested": 0,
+        "active_ram_footprint_bytes": 0,
+        "equivalent_full_context_bytes": 1,
+        "ram_saving_ratio": 1.0,
+        "retrieval_hit_rate_pct": 0.0
+      },
+      "adaptive_recursions_last": 2,
+      "latent_deltas": [
+        35921.34765625,
+        0.9993577599525452
+      ]
+    },
+    "integration_passed": true
+  },
+  "tiempo_total_segundos": 0.19
+}
