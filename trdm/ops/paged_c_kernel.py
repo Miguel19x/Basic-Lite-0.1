@@ -54,6 +54,15 @@ def get_paged_c_lib() -> ctypes.CDLL:
     ]
     lib.paged_direct_matmul_fast_c_multi.restype = None
 
+    lib.paged_lowrank_matmul_row_c.argtypes = [
+        ctypes.c_char_p,  # x [K]
+        ctypes.c_char_p,  # w_packed [rows * (K/4)]
+        ctypes.c_void_p,  # out [rows]
+        ctypes.c_int64,   # rows
+        ctypes.c_int64,   # K
+    ]
+    lib.paged_lowrank_matmul_row_c.restype = None
+
     _LIB_PAGED_INSTANCE = lib
     return lib
 
@@ -126,3 +135,29 @@ def paged_direct_matmul_fast_c_multi(
 
     final_shape = list(orig_shape[:-1]) + [total_out_features]
     return out_int32.view(*final_shape)
+
+
+def paged_lowrank_matmul_c(
+    x_int8: torch.Tensor,
+    packed_weights: bytes,
+    rows: int,
+    cols: int,
+) -> torch.Tensor:
+    """
+    Multiplica vector 1D x_int8 [cols] por pesos ternarios 2-bit [rows, cols]
+    devolviendo out [rows] en int32.
+    """
+    assert x_int8.is_contiguous(), "x_int8 debe ser contiguo"
+    K = x_int8.numel()
+    assert K == cols, f"Dimensión K ({K}) != cols ({cols})"
+    
+    out_int32 = torch.empty((rows,), dtype=torch.int32, device=x_int8.device)
+    lib = get_paged_c_lib()
+    lib.paged_lowrank_matmul_row_c(
+        ctypes.cast(x_int8.data_ptr(), ctypes.c_char_p),
+        packed_weights,
+        ctypes.c_void_p(out_int32.data_ptr()),
+        rows,
+        cols,
+    )
+    return out_int32

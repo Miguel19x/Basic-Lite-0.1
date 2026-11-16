@@ -185,3 +185,53 @@ void paged_direct_matmul_fast_c_multi(
         }
     }
 }
+
+/*
+ * Multiplica un vector x de dimensión K por una matriz de pesos ternarios 2-bit
+ * empaquetada (rows x K), acumulando en out [rows].
+ */
+void paged_lowrank_matmul_row_c(
+    const int8_t* x,          // [K]
+    const uint8_t* w_packed,  // [rows * (K / 4)]
+    int32_t* out,             // [rows]
+    int64_t rows,
+    int64_t K
+) {
+    int64_t bytes_per_row = K >> 2;
+    #pragma omp parallel for schedule(static)
+    for (int64_t r = 0; r < rows; ++r) {
+        const uint8_t* row_w = w_packed + r * bytes_per_row;
+        int32_t acc = 0;
+        int64_t k = 0;
+        for (; k + 16 <= K; k += 16) {
+            uint8_t b0 = row_w[(k >> 2) + 0];
+            uint8_t b1 = row_w[(k >> 2) + 1];
+            uint8_t b2 = row_w[(k >> 2) + 2];
+            uint8_t b3 = row_w[(k >> 2) + 3];
+            acc += (int32_t)x[k + 0] * (((int32_t)(b0 & 0x03)) - 1)
+                 + (int32_t)x[k + 1] * (((int32_t)((b0 >> 2) & 0x03)) - 1)
+                 + (int32_t)x[k + 2] * (((int32_t)((b0 >> 4) & 0x03)) - 1)
+                 + (int32_t)x[k + 3] * (((int32_t)((b0 >> 6) & 0x03)) - 1)
+                 + (int32_t)x[k + 4] * (((int32_t)(b1 & 0x03)) - 1)
+                 + (int32_t)x[k + 5] * (((int32_t)((b1 >> 2) & 0x03)) - 1)
+                 + (int32_t)x[k + 6] * (((int32_t)((b1 >> 4) & 0x03)) - 1)
+                 + (int32_t)x[k + 7] * (((int32_t)((b1 >> 6) & 0x03)) - 1)
+                 + (int32_t)x[k + 8] * (((int32_t)(b2 & 0x03)) - 1)
+                 + (int32_t)x[k + 9] * (((int32_t)((b2 >> 2) & 0x03)) - 1)
+                 + (int32_t)x[k + 10] * (((int32_t)((b2 >> 4) & 0x03)) - 1)
+                 + (int32_t)x[k + 11] * (((int32_t)((b2 >> 6) & 0x03)) - 1)
+                 + (int32_t)x[k + 12] * (((int32_t)(b3 & 0x03)) - 1)
+                 + (int32_t)x[k + 13] * (((int32_t)((b3 >> 2) & 0x03)) - 1)
+                 + (int32_t)x[k + 14] * (((int32_t)((b3 >> 4) & 0x03)) - 1)
+                 + (int32_t)x[k + 15] * (((int32_t)((b3 >> 6) & 0x03)) - 1);
+        }
+        for (; k + 4 <= K; k += 4) {
+            uint8_t b = row_w[k >> 2];
+            acc += (int32_t)x[k + 0] * (((int32_t)(b & 0x03)) - 1)
+                 + (int32_t)x[k + 1] * (((int32_t)((b >> 2) & 0x03)) - 1)
+                 + (int32_t)x[k + 2] * (((int32_t)((b >> 4) & 0x03)) - 1)
+                 + (int32_t)x[k + 3] * (((int32_t)((b >> 6) & 0x03)) - 1);
+        }
+        out[r] = acc;
+    }
+}

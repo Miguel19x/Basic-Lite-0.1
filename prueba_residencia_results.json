@@ -1,0 +1,227 @@
+{
+  "metadata": {
+    "date": "2026-11-16",
+    "model": "TRDM-v5",
+    "total_experts": 32,
+    "expert_packed_bytes": 524288,
+    "file_size_bytes": 16777216,
+    "resident_slots_limit": 2,
+    "resident_packed_weight_budget_bytes": 1048576,
+    "io_mechanism": "explicit pread(2) with /proc/self/io accounting",
+    "io_overhead_subtracted_rchar": 102
+  },
+  "functional_validation": {
+    "total_checks": 50,
+    "max_abs_diff_against_ram_reference": 0,
+    "slot_capacity_violations": 0,
+    "resident_hits": 15,
+    "app_faults": 35,
+    "evictions": 33
+  },
+  "performance_100_calls": {
+    "Acierto residente": {
+      "conteo": 60,
+      "porcentaje": 60.0,
+      "bytes_logicos": 0,
+      "rchar_neto": 0,
+      "read_bytes_storage": 0,
+      "t_lectura_us": {
+        "n": 60,
+        "mediana": 0.0,
+        "iqr": 0.0,
+        "min": 0.0,
+        "max": 0.0,
+        "media": 0.0,
+        "std": 0.0,
+        "p95": 0.0,
+        "p99": 0.0
+      },
+      "t_prep_us": {
+        "n": 60,
+        "mediana": 56.11,
+        "iqr": 6.1,
+        "min": 48.28,
+        "max": 223.1,
+        "media": 60.32,
+        "std": 22.23,
+        "p95": 65.95,
+        "p99": 143.58
+      },
+      "t_mult1_us": {
+        "n": 60,
+        "mediana": 582.28,
+        "iqr": 57.06,
+        "min": 501.09,
+        "max": 3580.99,
+        "media": 682.32,
+        "std": 494.05,
+        "p95": 713.26,
+        "p99": 3138.75
+      },
+      "t_mult2_us": {
+        "n": 60,
+        "mediana": 570.77,
+        "iqr": 47.64,
+        "min": 487.85,
+        "max": 1985.36,
+        "media": 636.84,
+        "std": 263.47,
+        "p95": 1035.61,
+        "p99": 1831.32
+      },
+      "t_total_us": {
+        "n": 60,
+        "mediana": 1290.43,
+        "iqr": 72.31,
+        "min": 1137.42,
+        "max": 4380.9,
+        "media": 1455.68,
+        "std": 564.72,
+        "p95": 2498.37,
+        "p99": 3937.16
+      }
+    },
+    "Fallo de aplicaci\u00f3n, cach\u00e9 del sistema caliente": {
+      "conteo": 30,
+      "porcentaje": 30.0,
+      "bytes_logicos": 15728640,
+      "rchar_neto": 15729210,
+      "read_bytes_storage": 0,
+      "t_lectura_us": {
+        "n": 30,
+        "mediana": 77.86,
+        "iqr": 17.45,
+        "min": 68.85,
+        "max": 109.13,
+        "media": 83.46,
+        "std": 13.5,
+        "p95": 107.98,
+        "p99": 108.89
+      },
+      "t_prep_us": {
+        "n": 30,
+        "mediana": 50.7,
+        "iqr": 4.37,
+        "min": 45.02,
+        "max": 144.67,
+        "media": 56.17,
+        "std": 20.59,
+        "p95": 89.06,
+        "p99": 135.92
+      },
+      "t_mult1_us": {
+        "n": 30,
+        "mediana": 600.87,
+        "iqr": 92.86,
+        "min": 496.8,
+        "max": 1442.42,
+        "media": 662.44,
+        "std": 198.41,
+        "p95": 993.2,
+        "p99": 1315.4
+      },
+      "t_mult2_us": {
+        "n": 30,
+        "mediana": 567.55,
+        "iqr": 49.66,
+        "min": 484.28,
+        "max": 701.77,
+        "media": 562.23,
+        "std": 45.3,
+        "p95": 636.41,
+        "p99": 686.97
+      },
+      "t_total_us": {
+        "n": 30,
+        "mediana": 1601.29,
+        "iqr": 185.57,
+        "min": 1348.37,
+        "max": 2436.47,
+        "media": 1644.1,
+        "std": 221.78,
+        "p95": 2022.28,
+        "p99": 2326.05
+      }
+    },
+    "Fallo con lectura de almacenamiento observada": {
+      "conteo": 10,
+      "porcentaje": 10.0,
+      "bytes_logicos": 5242880,
+      "rchar_neto": 5243067,
+      "read_bytes_storage": 5242880,
+      "t_lectura_us": {
+        "n": 10,
+        "mediana": 1304.51,
+        "iqr": 187.89,
+        "min": 1127.81,
+        "max": 2352.6,
+        "media": 1458.64,
+        "std": 406.49,
+        "p95": 2212.06,
+        "p99": 2324.49
+      },
+      "t_prep_us": {
+        "n": 10,
+        "mediana": 56.95,
+        "iqr": 188.39,
+        "min": 51.45,
+        "max": 333.32,
+        "media": 134.03,
+        "std": 125.85,
+        "p95": 321.84,
+        "p99": 331.03
+      },
+      "t_mult1_us": {
+        "n": 10,
+        "mediana": 633.46,
+        "iqr": 483.42,
+        "min": 582.04,
+        "max": 2518.17,
+        "media": 971.51,
+        "std": 628.2,
+        "p95": 2074.01,
+        "p99": 2429.33
+      },
+      "t_mult2_us": {
+        "n": 10,
+        "mediana": 577.71,
+        "iqr": 297.89,
+        "min": 486.53,
+        "max": 2090.13,
+        "media": 791.87,
+        "std": 481.47,
+        "p95": 1571.34,
+        "p99": 1986.38
+      },
+      "t_total_us": {
+        "n": 10,
+        "mediana": 3729.39,
+        "iqr": 1599.7,
+        "min": 2683.4,
+        "max": 4795.61,
+        "media": 3862.01,
+        "std": 829.03,
+        "p95": 4791.68,
+        "p99": 4794.82
+      }
+    }
+  },
+  "performance_300_calls_extended": {
+    "total_calls": 300,
+    "resident_hits": 96,
+    "faults_page_cache_hot": 194,
+    "faults_storage_observed": 10,
+    "evictions": 202,
+    "latencies_overall_us": {
+      "n": 300,
+      "mediana": 1491.84,
+      "iqr": 461.07,
+      "min": 1041.18,
+      "max": 8862.29,
+      "media": 1916.69,
+      "std": 1201.31,
+      "p95": 4768.89,
+      "p99": 6195.25
+    }
+  }
+}
