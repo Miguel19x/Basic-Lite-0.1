@@ -1,0 +1,132 @@
+{
+  "C1 (1 paso, t=1.0)": {
+    "exact_match_pct": 0.0,
+    "digit_acc_pct": 74.6141975308642,
+    "format_valid_pct": 100.0,
+    "scratchpad_valid_pct": 100.0,
+    "ms_per_case": 23.685373694444547,
+    "correct_em": 0,
+    "total_cases": 108,
+    "sample_predictions": [
+      {
+        "target": "pw: 216 | pms: 022 | watt: 256 | ms: 035 | ",
+        "pred": "pw: 216 | pms: 022 | watt: 228 | ms: 032 | ",
+        "match": false
+      },
+      {
+        "target": "pw: 033 | pms: 021 | watt: 083 | ms: 047 | ",
+        "pred": "pw: 033 | pms: 021 | watt: 063 | ms: 049 | ",
+        "match": false
+      },
+      {
+        "target": "pw: 264 | pms: 028 | watt: 304 | ms: 050 | ",
+        "pred": "pw: 264 | pms: 028 | watt: 228 | ms: 032 | ",
+        "match": false
+      }
+    ]
+  },
+  "C2 (K=4 pasos)": {
+    "exact_match_pct": 0.0,
+    "digit_acc_pct": 68.90432098765432,
+    "format_valid_pct": 12.962962962962964,
+    "scratchpad_valid_pct": 6.481481481481482,
+    "ms_per_case": 101.82362214814906,
+    "correct_em": 0,
+    "total_cases": 108,
+    "sample_predictions": [
+      {
+        "target": "pw: 216 | pms: 022 | watt: 256 | ms: 035 | ",
+        "pred": "pw: 216 | pms: 022 | watt: 223 | 4?: 032 | ",
+        "match": false
+      },
+      {
+        "target": "pw: 033 | pms: 021 | watt: 083 | ms: 047 | ",
+        "pred": "pw: 033 | p?s: 021 | watti 073?ms: 049 | ",
+        "match": false
+      },
+      {
+        "target": "pw: 264 | pms: 028 | watt: 304 | ms: 050 | ",
+        "pred": "pw: 264 | p?s: 028 | watt: 220 | 4i: 032 | ",
+        "match": false
+      }
+    ]
+  },
+  "C2 (K=8 pasos)": {
+    "exact_match_pct": 0.0,
+    "digit_acc_pct": 42.901234567901234,
+    "format_valid_pct": 0.0,
+    "scratchpad_valid_pct": 0.0,
+    "ms_per_case": 193.27463812963,
+    "correct_em": 0,
+    "total_cases": 108,
+    "sample_predictions": [
+      {
+        "target": "pw: 216 | pms: 022 | watt: 256 | ms: 035 | ",
+        "pred": "ww? 228???J: 022 | ?a?wi 120?4ni 0421",
+        "match": false
+      },
+      {
+        "target": "pw: 033 | pms: 021 | watt: 083 | ms: 047 | ",
+        "pred": "wwi 035?\\\\wwi 014 | ?a?:? 103?mwi 032?",
+        "match": false
+      },
+      {
+        "target": "pw: 264 | pms: 028 | watt: 304 | ms: 050 | ",
+        "pred": "wwi 2641wwwi 020??wwii 220b?wi 0421",
+        "match": false
+      }
+    ]
+  },
+  "C2 (K=16 pasos)": {
+    "exact_match_pct": 0.0,
+    "digit_acc_pct": 33.56481481481482,
+    "format_valid_pct": 0.0,
+    "scratchpad_valid_pct": 0.0,
+    "ms_per_case": 394.6125975740739,
+    "correct_em": 0,
+    "total_cases": 108,
+    "sample_predictions": [
+      {
+        "target": "pw: 216 | pms: 022 | watt: 256 | ms: 035 | ",
+        "pred": "w\\\\i 262?\\\\4 ? 028???\\\\\\\\ 0120?1?i 0420",
+        "match": false
+      },
+      {
+        "target": "pw: 033 | pms: 021 | watt: 083 | ms: 047 | ",
+        "pred": "pwi 128?\\\\4ni 014???w\\\\ 129?1?i 040?",
+        "match": false
+      },
+      {
+        "target": "pw: 264 | pms: 028 | watt: 304 | ms: 050 | ",
+        "pred": "\\\\wi1268?\\\\12i 120???\\\\i?1220?14i 1320",
+        "match": false
+      }
+    ]
+  },
+  "C2-Oracle-Scratchpad (K=8)": {
+    "exact_match_pct": 0.0,
+    "digit_acc_pct": 67.82407407407408,
+    "format_valid_pct": 0.0,
+    "scratchpad_valid_pct": 0.0,
+    "ms_per_case": 201.37705052777872,
+    "correct_em": 0,
+    "total_cases": 108,
+    "sample_predictions": [
+      {
+        "target": "pw: 216 | pms: 022 | watt: 256 | ms: 035 | ",
+        "pred": "pw: 216 | pms: 022 | ???wi 120?4ni 042 | ",
+        "match": false
+      },
+      {
+        "target": "pw: 033 | pms: 021 | watt: 083 | ms: 047 | ",
+        "pred": "pw: 033 | pms: 021 | p??:i 083?1wi 039?",
+        "match": false
+      },
+      {
+        "target": "pw: 264 | pms: 028 | watt: 304 | ms: 050 | ",
+        "pred": "pw: 264 | pms: 028 | ww\\\\\\\\?1220b1ui 042?",
+        "match": false
+      }
+    ]
+  }
+}

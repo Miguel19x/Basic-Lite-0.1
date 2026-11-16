@@ -1,0 +1,89 @@
+{
+  "timestamp": "2026-11-16 05:27:11",
+  "duration_seconds": 0.91086745262146,
+  "all_passed": true,
+  "E0_1_causality": {
+    "train": {
+      "max_future_gradient": 0.0,
+      "passed": true,
+      "block_leakages": {
+        "block_0_to_future": 0.0,
+        "block_1_to_future": 0.0,
+        "block_2_to_future": 0.0,
+        "block_3_to_future": 0.0,
+        "block_4_to_future": 0.0,
+        "block_5_to_future": 0.0,
+        "block_6_to_future": 0.0,
+        "block_7_to_future": 0.0,
+        "block_8_to_future": 0.0
+      }
+    },
+    "eval": {
+      "max_future_gradient": 0.0,
+      "passed": true,
+      "block_leakages": {
+        "block_0_to_future": 0.0,
+        "block_1_to_future": 0.0,
+        "block_2_to_future": 0.0,
+        "block_3_to_future": 0.0,
+        "block_4_to_future": 0.0,
+        "block_5_to_future": 0.0,
+        "block_6_to_future": 0.0,
+        "block_7_to_future": 0.0,
+        "block_8_to_future": 0.0
+      }
+    }
+  },
+  "E0_2_cache_equivalence": {
+    "batch_1": {
+      "max_abs_diff": 0.0,
+      "passed": true
+    },
+    "batch_4": {
+      "max_abs_diff": 0.0,
+      "passed": true
+    },
+    "batch_8": {
+      "max_abs_diff": 0.0,
+      "passed": true
+    }
+  },
+  "E0_3_batch_independence": {
+    "max_diff_batch_ab": 0.0,
+    "max_diff_batch_solo": 0.0,
+    "passed": true
+  },
+  "E0_4_parsers": {
+    "total_evaluated": 2880,
+    "parsed_finals_ok": 2880,
+    "parsed_scratchpad_ok": 2880,
+    "min_watt": 5,
+    "max_watt": 686,
+    "min_ms": 1,
+    "max_ms": 201,
+    "in_3_digits_range": true,
+    "passed": true
+  },
+  "E0_5_data_and_baselines": {
+    "partitions_counts": {
+      "train": 2052,
+      "dev": 108,
+      "test_azar": 240,
+      "test_composicional": 480,
+      "total_unique": 2880
+    },
+    "disjunction_passed": true,
+    "trivial_baselines": {
+      "modal_watt": 71,
+      "modal_ms": 19,
+      "test_comp": {
+        "exact_match_pct": 0.0,
+        "digit_accuracy_pct": 34.392361111111114
+      },
+      "test_azar": {
+        "exact_match_pct": 0.0
+      }
+    },
+    "passed": true
+  }
+}

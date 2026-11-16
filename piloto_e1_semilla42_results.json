@@ -1,0 +1,54 @@
+{
+  "experiment": "E1_Piloto_Semilla42",
+  "timestamp": "2026-11-16 11:04:33",
+  "total_wall_seconds": 396.35989763299995,
+  "steady_ms_per_step": 125.52663021235612,
+  "peak_ram_mib": 1713.80859375,
+  "steps_completed": 3000,
+  "final_loss": 0.3591625690460205,
+  "eval_history": [
+    {
+      "step": 500,
+      "dev_metrics": {
+        "c1_digit_acc": 30.169753086419753,
+        "c1_exact_match": 0.0
+      }
+    },
+    {
+      "step": 1000,
+      "dev_metrics": {
+        "c1_digit_acc": 33.410493827160494,
+        "c1_exact_match": 0.0
+      }
+    },
+    {
+      "step": 1500,
+      "dev_metrics": {
+        "c1_digit_acc": 20.679012345679013,
+        "c1_exact_match": 0.0
+      }
+    },
+    {
+      "step": 2000,
+      "dev_metrics": {
+        "c1_digit_acc": 33.873456790123456,
+        "c1_exact_match": 0.0
+      }
+    },
+    {
+      "step": 2500,
+      "dev_metrics": {
+        "c1_digit_acc": 26.85185185185185,
+        "c1_exact_match": 0.0
+      }
+    },
+    {
+      "step": 3000,
+      "dev_metrics": {
+        "c1_digit_acc": 29.62962962962963,
+        "c1_exact_match": 0.0
+      }
+    }
+  ],
+  "test_set_opened": false
+}

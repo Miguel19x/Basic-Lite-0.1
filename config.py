@@ -59,6 +59,10 @@ class HybridConfig:
     digit_token_weight: float = 6.0  # Peso x6 en posiciones de dígitos ('0'..'9')
     template_token_weight: float = 3.5 # Peso suficiente para evitar fallos ortográficos (sub_w:, sub_ms:, etc.)
     pad_token_weight: float = 0.20   # Peso reducido en PAD post-EOS
+    loss_weight_pw: float = 1.0      # Peso del scratchpad de potencia
+    loss_weight_pms: float = 1.0     # Peso del scratchpad de latencia
+    loss_weight_final: float = 3.5   # Peso reforzado en la suma aditiva final (watt y ms)
+    loss_weight_eos: float = 0.20    # Peso del delimitador EOS
 
     # Principio 4: Modularidad Paginada y Enrutamiento Consciente de Memoria
     num_experts: int = 4
