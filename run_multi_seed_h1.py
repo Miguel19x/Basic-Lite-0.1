@@ -174,24 +174,36 @@ def train_single_hybrid_seed(
 
         # Pasada 1 (ruido alto t1)
         x_t1, mask_pos1, t1 = apply_blockwise_diffusion_corruption(x_0, can_mask, cfg)
-        logits1, inter1, halt1, _, carried1 = model(x_t1, t1, num_recursions=r_train)
+        sup1 = mask_pos1 if cfg.lazy_vocab_projection else None
+        logits1, inter1, halt1, _, carried1 = model(x_t1, t1, num_recursions=r_train, supervised_mask=sup1)
         loss1, _ = compute_v4_hybrid_loss(logits1, inter1, halt1, x_0, mask_pos1, digit_mask, t1, cfg)
 
-        # Pasada 2 encadenada (ruido menor t2, entrenando carry_gate y delta_t)
+        # Pasada 2 encadenada (ruido menor t2, con predicción del modelo y sin filtración de x_0)
+        if logits1.ndim == 2:
+            preds_sup1 = logits1.detach().argmax(dim=-1)
+            preds1 = x_t1.clone()
+            preds1[mask_pos1] = preds_sup1
+        else:
+            preds1 = logits1.detach().argmax(dim=-1)
+
         frac_keep = torch.empty_like(t1).uniform_(0.35, 0.85)
-        keep_mask = (torch.rand_like(x_0, dtype=torch.float32) < frac_keep.unsqueeze(1)) & mask_pos1
+        keep_cond = (torch.rand_like(x_0, dtype=torch.float32) < frac_keep.unsqueeze(1)) if t1.dim() == 1 else (torch.rand_like(x_0, dtype=torch.float32) < frac_keep)
+        keep_mask = keep_cond & mask_pos1
         for b in range(x_0.size(0)):
             if not keep_mask[b].any() and mask_pos1[b].any():
                 idx_m = torch.nonzero(mask_pos1[b], as_tuple=False).squeeze(-1)
                 keep_mask[b, idx_m[0]] = True
 
-        x_t2 = x_0.clone()
+        x_t2 = x_t1.clone()
+        revealed_pos = mask_pos1 & ~keep_mask
+        x_t2[revealed_pos] = preds1[revealed_pos]
         x_t2[keep_mask] = cfg.mask_token_id
         t2 = (t1 * frac_keep).clamp(min=0.05)
         dt = (t1 - t2).clamp(min=0.01)
 
+        sup2 = keep_mask if cfg.lazy_vocab_projection else None
         logits2, inter2, halt2, _, _ = model(
-            x_t2, t2, delta_t=dt, prev_states=carried1, num_recursions=r_train
+            x_t2, t2, delta_t=dt, prev_states=carried1, num_recursions=r_train, supervised_mask=sup2
         )
         loss2, metrics2 = compute_v4_hybrid_loss(logits2, inter2, halt2, x_0, keep_mask, digit_mask, t2, cfg)
 
@@ -305,7 +317,7 @@ def main():
     parser = argparse.ArgumentParser(description="Protocolo Multi-Semilla H1 y Paridad Baseline AR (TRDM-v4)")
     parser.add_argument("--seeds", type=int, nargs="+", default=[42, 1337, 2026], help="Lista de semillas")
     parser.add_argument("--steps", type=int, default=800, help="Pasos de entrenamiento por semilla")
-    parser.add_argument("--threads", type=int, default=4, help="Hilos de CPU en Linux")
+    parser.add_argument("--threads", type=int, default=2, help="Hilos de CPU en Linux")
     parser.add_argument("--skip-random-r", action="store_true", help="Omitir ablación con R_train aleatorio")
     parser.add_argument("--skip-ar", action="store_true", help="Omitir baseline autorregresivo")
     parser.add_argument("--out-json", type=str, default="multi_seed_h1_results.json", help="Ruta JSON de salida")
