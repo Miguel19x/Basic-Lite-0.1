@@ -40,6 +40,7 @@ def train_v6(
     seed: int = 42,
     device_name: str = "auto",
     eval_interval: int = 200,
+    warmup_ratio: float = 0.40,
     checkpoint_out: str = "trdm_v6_checkpoint.pt",
 ):
     torch.manual_seed(seed)
@@ -91,6 +92,7 @@ def train_v6(
     print(f"[*] Inicio del entrenamiento. Muestras Train: {len(train_dataset)} | Dev: {len(dev_dataset)}")
     t0_start = time.time()
     best_dev_em = -1.0
+    best_dev_score = -1.0
 
     model.train()
     for step in range(1, steps + 1):
@@ -98,8 +100,16 @@ def train_v6(
         x_0 = x_0.to(device)
         t_noise = torch.ones(x_0.shape[0], device=device)
 
-        # Scheduled sampling: decae suavemente de 0.95 a 0.70 a lo largo de los pasos
-        sched_p = max(0.70, 0.95 - 0.25 * (step / steps))
+        # Currículo en 2 Fases (Staged Warmup):
+        # Fase A (primer 40% de pasos): sched_p = 1.0 (anclaje con ground truth en subtotales
+        # para que la Etapa 2 aprenda a sumar sin verse contaminada por predicciones iniciales ruidosas).
+        # Fase B: decaimiento gradual de 1.0 a 0.70 para mitigar el sesgo de exposición (exposure bias).
+        warmup_steps = int(steps * warmup_ratio)
+        if step <= warmup_steps:
+            sched_p = 1.0
+        else:
+            progress = (step - warmup_steps) / max(1, steps - warmup_steps)
+            sched_p = max(0.70, 1.0 - 0.30 * progress)
 
         optimizer.zero_grad()
         out = model.forward_two_stage(x_0, plen_list, t_noise, scheduled_sampling_p=sched_p)
@@ -129,15 +139,26 @@ def train_v6(
                 f"FmtValid={dev_metrics['fmt_valid_pct']:.2f}%"
             )
 
-            if dev_metrics["exact_match_pct"] > best_dev_em:
+            # Puntuación compuesta para desempate en fases tempranas (evita estancamiento en step temprano cuando EM=0%)
+            # Jerarquía estricta: ExactMatch (10000x) > FinalEM (1000x) > ScratchpadEM (100x) > DigAcc (1x)
+            dev_score = (
+                dev_metrics["exact_match_pct"] * 10000.0
+                + dev_metrics["final_exact_pct"] * 1000.0
+                + dev_metrics["scratchpad_exact_pct"] * 100.0
+                + dev_metrics["digit_acc_pct"]
+            )
+
+            if dev_score > best_dev_score:
+                best_dev_score = dev_score
                 best_dev_em = dev_metrics["exact_match_pct"]
-                print(f"  [*] Guardando mejor checkpoint en: {checkpoint_out}")
+                print(f"  [*] Guardando mejor checkpoint (Score={dev_score:.2f}, SP_EM={dev_metrics['scratchpad_exact_pct']:.2f}%) en: {checkpoint_out}")
                 torch.save(
                     {
                         "step": step,
                         "model_state": model.state_dict(),
                         "cfg": cfg,
                         "best_dev_em": best_dev_em,
+                        "best_dev_score": best_dev_score,
                         "dev_metrics": dev_metrics,
                     },
                     checkpoint_out,
@@ -147,8 +168,21 @@ def train_v6(
     total_time = time.time() - t0_start
     print("\n" + "=" * 80)
     print(f"Entrenamiento completado en {total_time:.2f} s ({total_time / steps * 1000:.1f} ms/paso)")
-    print(f"Mejor Exact Match en DEV: {best_dev_em:.2f}%")
+    print(f"Mejor Exact Match en DEV: {best_dev_em:.2f}% (Mejor Score: {best_dev_score:.2f})")
     print("=" * 80)
+
+    # Guardar siempre el último estado al finalizar
+    last_ckpt_path = checkpoint_out.replace(".pt", "_last.pt")
+    torch.save(
+        {
+            "step": steps,
+            "model_state": model.state_dict(),
+            "cfg": cfg,
+            "dev_metrics": dev_metrics,
+        },
+        last_ckpt_path,
+    )
+    print(f"[*] Último estado guardado en: {last_ckpt_path}")
 
     # Evaluación final en Test-Composicional
     print("\n--- EVALUACIÓN FINAL EN TEST-COMPOSICIONAL (480 casos) ---")
@@ -176,6 +210,7 @@ if __name__ == "__main__":
     parser.add_argument("--seed", type=int, default=42, help="Semilla aleatoria")
     parser.add_argument("--device", type=str, default="auto", help="cpu o cuda")
     parser.add_argument("--eval_interval", type=int, default=200, help="Intervalo de evaluación")
+    parser.add_argument("--warmup_ratio", type=float, default=0.40, help="Fracción de pasos con sched_p = 1.0 (anclaje perfecto)")
     parser.add_argument("--out", type=str, default="trdm_v6_checkpoint.pt", help="Ruta de checkpoint")
     args = parser.parse_args()
 
@@ -186,5 +221,6 @@ if __name__ == "__main__":
         seed=args.seed,
         device_name=args.device,
         eval_interval=args.eval_interval,
+        warmup_ratio=args.warmup_ratio,
         checkpoint_out=args.out,
     )
