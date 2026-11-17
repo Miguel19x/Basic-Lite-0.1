@@ -232,12 +232,13 @@ class TRDMv6CausalModel(nn.Module):
     def generate_causal_two_step(
         self,
         prompt_bytes: bytes,
+        override_scratchpad_tokens: Optional[Tuple[torch.Tensor, torch.Tensor]] = None,
     ) -> Tuple[str, Dict[str, Any]]:
         """
         Inferencia Causal Determinista en 2 Pasadas (Zero Exposure Bias):
-        1. Emite subtotales Pw, Pms.
-        2. Fija Pw, Pms en la secuencia de entrada.
-        3. Emite totales finales watt, ms.
+        1. Emite subtotales Pw, Pms (o utiliza override_scratchpad_tokens para auditoría causal).
+        2. Fija Pw, Pms en la secuencia de entrada como hechos consumados del contexto.
+        3. Emite totales finales watt, ms condicionados a dichos subtotales.
         """
         self.eval()
         device = next(self.parameters()).device
@@ -272,9 +273,15 @@ class TRDMv6CausalModel(nn.Module):
         pred_pw_tokens = logits_1[0, pw_start:pw_end].argmax(dim=-1)
         pred_pms_tokens = logits_1[0, pms_start:pms_end].argmax(dim=-1)
 
-        # --- ANCLAJE CAUSAL ---
-        x[0, pw_start:pw_end] = pred_pw_tokens
-        x[0, pms_start:pms_end] = pred_pms_tokens
+        # --- ANCLAJE CAUSAL (Inyección en contexto para Etapa 2) ---
+        if override_scratchpad_tokens is not None:
+            actual_pw_tokens, actual_pms_tokens = override_scratchpad_tokens
+            x[0, pw_start:pw_end] = actual_pw_tokens
+            x[0, pms_start:pms_end] = actual_pms_tokens
+        else:
+            actual_pw_tokens, actual_pms_tokens = pred_pw_tokens, pred_pms_tokens
+            x[0, pw_start:pw_end] = pred_pw_tokens
+            x[0, pms_start:pms_end] = pred_pms_tokens
 
         # --- PASADA 2: Predecir Totales Condicionados ---
         logits_2 = self.forward_backbone(x, t_noise)
@@ -282,8 +289,10 @@ class TRDMv6CausalModel(nn.Module):
         pred_ms_tokens = logits_2[0, ms_start:ms_end].argmax(dim=-1)
 
         # Decodificación final de caracteres ASCII
-        pw_str = "".join(chr(int(t)) for t in pred_pw_tokens)
-        pms_str = "".join(chr(int(t)) for t in pred_pms_tokens)
+        pw_str = "".join(chr(int(t)) for t in actual_pw_tokens)
+        pms_str = "".join(chr(int(t)) for t in actual_pms_tokens)
+        pred_pw_raw = "".join(chr(int(t)) for t in pred_pw_tokens)
+        pred_pms_raw = "".join(chr(int(t)) for t in pred_pms_tokens)
         watt_str = "".join(chr(int(t)) for t in pred_watt_tokens)
         ms_str = "".join(chr(int(t)) for t in pred_ms_tokens)
 
@@ -292,10 +301,14 @@ class TRDMv6CausalModel(nn.Module):
         meta = {
             "pw": pw_str,
             "pms": pms_str,
+            "pred_pw_raw": pred_pw_raw,
+            "pred_pms_raw": pred_pms_raw,
             "watt": watt_str,
             "ms": ms_str,
             "pw_int": int(pw_str) if pw_str.isdigit() else None,
             "pms_int": int(pms_str) if pms_str.isdigit() else None,
+            "pred_pw_raw_int": int(pred_pw_raw) if pred_pw_raw.isdigit() else None,
+            "pred_pms_raw_int": int(pred_pms_raw) if pred_pms_raw.isdigit() else None,
             "watt_int": int(watt_str) if watt_str.isdigit() else None,
             "ms_int": int(ms_str) if ms_str.isdigit() else None,
         }
