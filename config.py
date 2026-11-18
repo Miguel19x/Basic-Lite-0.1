@@ -83,25 +83,35 @@ class HybridConfig:
     graph_capacity_decay: float = 0.75        # Amortiguación de presupuesto k en recursiones sucesivas r > 0
     min_gate_threshold: float = 1e-4          # Umbral mínimo para ejecutar un token en un nodo experto
 
-    # Principio 4.1: Administrador de Movimiento de Pesos y Caché de Expertos
-    max_resident_experts: int = 2             # Presupuesto estricto de expertos en RAM simultáneos (ej. 2 de 4)
+    # =========================================================================
+    # Sistema de Activación por Escalabilidad (TRACE Núcleo 870K -> Escalado 30B)
+    # =========================================================================
+    # A la escala actual (~870K parámetros, secuencias de 160 bytes en CPU i3-1115G4),
+    # estos componentes de arquitectura 30B permanecen desactivados (False) para
+    # garantizar máxima velocidad, gradientes limpios y resolución aritmética byte a byte.
+    # Al escalar el modelo o la longitud de contexto, se activan cambiando su bandera.
+    enable_nvme_io_simulation: bool = False  # True: activa penalización S(e) y buddy routing para SSD; False: expertos 100% residentes en RAM
+    enable_sqlite_context_l3: bool = False   # True: activa persistencia SQLite (context_archive.db); False: contexto L1/L2 en RAM
+    use_mla: bool = False                    # True: activa compresión KV latente para 128k tokens; False: GQA directa estándar para secuencias cortas
+    use_byte_patching: bool = False          # True: agrupa P=4 bytes para secuencias masivas; False: 1:1 bytes para resolución aritmética exacta
+
+    # Principio 4.1: Administrador de Movimiento de Pesos y Caché de Expertos (Modo 30B)
+    max_resident_experts: int = 2             # Presupuesto estricto de expertos en RAM simultáneos (ej. 2 de 4) si enable_nvme_io_simulation=True
     lambda_read_cost: float = 0.35            # Penalización por costo de transferencia desde almacenamiento secundario
     mu_compute_cost: float = 0.05             # Penalización por costo de operaciones
     memory_escape_threshold: float = 0.70     # Utilidad mínima requerida para forzar carga de experto ausente de SSD
     enable_expert_prefetch: bool = True       # Anticipación del siguiente paso en ejecución asíncrona
 
-    # Principio 5: Memoria Contextual Jerárquica y Compresión de Caché KV (Auditoría 30B)
-    use_mla: bool = True                      # Multi-Head Latent Attention (DeepSeek-V2/V3) para comprimir KV
-    mla_latent_dim: int = 48                  # Dimensión latente d_c << 2 * n_kv_heads * head_dim
+    # Principio 5: Memoria Contextual Jerárquica y Compresión de Caché KV (Modo 30B)
+    mla_latent_dim: int = 48                  # Dimensión latente d_c << 2 * n_kv_heads * head_dim (si use_mla=True)
     active_context_tokens: int = 64           # Nivel 1: Tamaño de la ventana activa en RAM (atención directa)
     compressed_segment_tokens: int = 32       # Nivel 2: Tamaño de segmento comprimido latente
-    archive_context_enabled: bool = True      # Nivel 3: Archivo exacto en disco con índice de hechos
+    archive_context_enabled: bool = False     # Sincronizado con enable_sqlite_context_l3
     archive_storage_path: str = "context_archive.db"
     retrieval_top_k: int = 2                  # Número de fragmentos exactos recuperados hacia el nivel activo
 
-    # Principio 6: Compresión Interna de Bytes (Byte Patching Jerárquico)
-    use_byte_patching: bool = True            # Agrupación de bytes en parches latentes (MEGABYTE / BLT)
-    byte_patch_size: int = 4                  # 4 bytes por parche (reduce la longitud del tronco a 1/4)
+    # Principio 6: Compresión Interna de Bytes (Byte Patching Jerárquico - Modo 30B)
+    byte_patch_size: int = 4                  # 4 bytes por parche (reduce la longitud del tronco a 1/4 si use_byte_patching=True)
     patch_encoder_dim: int = 96               # Dimensión intermedia del codificador local ligero
 
     # Motor de ejecución con presupuesto (Lazy Logits, Compilación y Separación Dev/Experimento)
@@ -121,6 +131,6 @@ class HybridConfig:
     max_steps: int = 800             # Presupuesto ampliado para consolidar aritmética
     eval_every: int = 100
     grad_clip: float = 1.0
-    checkpoint_path: str = "trdm_v5_checkpoint.pt"
-    bitcos_export_path: str = "trdm_v5_paged_bitcos.bin"
+    checkpoint_path: str = "trace_checkpoint.pt"
+    bitcos_export_path: str = "trace_paged_bitcos.bin"
 

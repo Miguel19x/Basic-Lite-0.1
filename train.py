@@ -19,7 +19,7 @@ from torch.utils.data import DataLoader
 
 from config import HybridConfig
 from data import ProceduralCompositionalDataset
-from trdm.models.causal import TRDMCausalModel
+from trace.models.causal import TRACECausalModel
 from eval import evaluate_causal
 
 
@@ -38,10 +38,6 @@ def collate_fn(batch, max_seq_len: int, pad_token_id: int, bos_token_id: int, eo
     return torch.tensor(x_0_list, dtype=torch.long), plen_list
 
 
-# Alias de compatibilidad
-collate_fn_v6 = collate_fn
-
-
 def train(
     steps: int = 1000,
     lr: float = 3e-4,
@@ -50,7 +46,7 @@ def train(
     device_name: str = "auto",
     eval_interval: int = 200,
     warmup_ratio: float = 0.40,
-    checkpoint_out: str = "trdm_checkpoint.pt",
+    checkpoint_out: str = "trace_checkpoint.pt",
 ):
     torch.manual_seed(seed)
     if device_name == "auto":
@@ -59,7 +55,7 @@ def train(
         device = torch.device(device_name)
 
     print("=" * 80)
-    print("Basic-Lite 0.2 — Entrenamiento Causal de 2 Etapas")
+    print("Basic-Lite TRACE — Entrenamiento Causal de 2 Etapas")
     print(f"Dispositivo: {device} | Semilla: {seed} | Pasos: {steps} | LR: {lr:.2e} | Lote: {batch_size}")
     print("=" * 80)
 
@@ -69,13 +65,15 @@ def train(
         use_scratchpad=True,
         use_explicit_operands=False,
     )
+    if device.type == "cpu":
+        torch.set_num_threads(cfg.cpu_threads)
 
     # Conjuntos de datos pre-registrados
     train_dataset = ProceduralCompositionalDataset(cfg, split="train")
     dev_dataset = ProceduralCompositionalDataset(cfg, split="dev")
     test_comp_dataset = ProceduralCompositionalDataset(cfg, split="test-composicional")
 
-    model = TRDMCausalModel(cfg).to(device)
+    model = TRACECausalModel(cfg).to(device)
 
     # Optimizador con grupos desacoplados de decaimiento
     param_groups = model.configure_adamw_groups()
@@ -130,9 +128,12 @@ def train(
         optimizer.step()
 
         if step % 50 == 0 or step == 1:
+            u_loss = out.get("loss_units", torch.tensor(0.0)).item()
+            t_loss = out.get("loss_tens", torch.tensor(0.0)).item()
+            h_loss = out.get("loss_hundreds", torch.tensor(0.0)).item()
             print(
                 f"Paso {step:04d}/{steps} | Loss: {loss.item():.4f} "
-                f"(S1 Pw/Pms: {out['loss_stage1'].item():.4f}, S2 Tot: {out['loss_stage2'].item():.4f}) | "
+                f"(S1: {out['loss_stage1'].item():.4f}, U: {u_loss:.4f}, D: {t_loss:.4f}, C: {h_loss:.4f}) | "
                 f"SchedP: {sched_p:.2f}"
             )
 
@@ -216,12 +217,8 @@ def train(
     return comp_metrics
 
 
-# Alias de compatibilidad
-train_v6 = train
-
-
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="Entrenamiento Causal de 2 Etapas — Basic-Lite 0.2")
+    parser = argparse.ArgumentParser(description="Entrenamiento Causal de 2 Etapas — Basic-Lite TRACE")
     parser.add_argument("--steps", type=int, default=1000, help="Pasos de entrenamiento")
     parser.add_argument("--lr", type=float, default=3e-4, help="Tasa de aprendizaje")
     parser.add_argument("--batch_size", type=int, default=32, help="Tamaño de lote")
@@ -229,7 +226,7 @@ if __name__ == "__main__":
     parser.add_argument("--device", type=str, default="auto", help="cpu o cuda")
     parser.add_argument("--eval_interval", type=int, default=200, help="Intervalo de evaluación")
     parser.add_argument("--warmup_ratio", type=float, default=0.40, help="Fracción de pasos con sched_p = 1.0 (anclaje perfecto)")
-    parser.add_argument("--out", type=str, default="trdm_checkpoint.pt", help="Ruta de checkpoint")
+    parser.add_argument("--out", type=str, default="trace_checkpoint.pt", help="Ruta de checkpoint")
     args = parser.parse_args()
 
     train(

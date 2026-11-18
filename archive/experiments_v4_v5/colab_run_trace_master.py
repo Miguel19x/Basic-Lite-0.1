@@ -5,7 +5,7 @@
 # Véanse LICENSE.txt y THIRD_PARTY_NOTICES.md.
 
 """
-Basic-Lite 0.2 (Fase 2) — Script Maestro de Entrenamiento y Evaluación Confirmatoria TRDM-v6 para Google Colab
+Basic-Lite TRACE — Script Maestro de Entrenamiento y Evaluación Confirmatoria TRACE para Google Colab
 Ejecuta el pipeline de 2 etapas con Abacus Embeddings, Staged Warmup y evaluación completa (DEV, Test-Comp, Test-Azar).
 Compatible con GPU (CUDA) y CPU. Persiste automáticamente en /content/drive/MyDrive/BasicLite/ si está disponible.
 """
@@ -24,9 +24,10 @@ import torch.nn as nn
 from torch.utils.data import DataLoader
 
 from config import HybridConfig
-from data_v2 import ProceduralCompositionalDatasetV2
-from trdm.models.trdm_v6_causal import TRDMv6CausalModel
-from eval_v6 import evaluate_causal_v6
+from data import ProceduralCompositionalDataset
+from trace.models.causal import TRACECausalModel
+from eval import evaluate_causal
+from train import collate_fn
 
 
 OUTPUT_DIR = "/content/drive/MyDrive/BasicLite"
@@ -36,20 +37,6 @@ if not os.path.exists("/content/drive/MyDrive"):
 os.makedirs(OUTPUT_DIR, exist_ok=True)
 
 DEFAULT_SEEDS = [42, 123, 456, 789, 999]
-
-
-def collate_fn_v6(batch, max_seq_len: int, pad_token_id: int, bos_token_id: int, eos_token_id: int):
-    x_0_list = []
-    plen_list = []
-    for prompt_b, target_b, _, _ in batch:
-        plen = 1 + len(prompt_b)
-        plen_list.append(plen)
-        full_seq = [bos_token_id] + list(prompt_b) + list(target_b) + [eos_token_id]
-        full_seq = full_seq[:max_seq_len]
-        pad_len = max_seq_len - len(full_seq)
-        full_seq = full_seq + [pad_token_id] * pad_len
-        x_0_list.append(full_seq)
-    return torch.tensor(x_0_list, dtype=torch.long), plen_list
 
 
 def run_seed_training_and_eval(
@@ -67,7 +54,7 @@ def run_seed_training_and_eval(
         torch.cuda.manual_seed_all(seed)
 
     print("\n" + "=" * 80)
-    print(f"[SEMILLA {seed}] Iniciando TRDM-v6 Causal de 2 Etapas ({steps} pasos en {device})")
+    print(f"[SEMILLA {seed}] Iniciando TRACE Causal de 2 Etapas ({steps} pasos en {device})")
     print(f"Hiperparámetros: LR={lr:.2e} | Lote={batch_size} | WarmupRatio={warmup_ratio:.2f}")
     print("=" * 80)
 
@@ -78,12 +65,12 @@ def run_seed_training_and_eval(
         use_explicit_operands=False,
     )
 
-    train_dataset = ProceduralCompositionalDatasetV2(cfg, split="train")
-    dev_dataset = ProceduralCompositionalDatasetV2(cfg, split="dev")
-    test_comp_dataset = ProceduralCompositionalDatasetV2(cfg, split="test-composicional")
-    test_azar_dataset = ProceduralCompositionalDatasetV2(cfg, split="test-azar")
+    train_dataset = ProceduralCompositionalDataset(cfg, split="train")
+    dev_dataset = ProceduralCompositionalDataset(cfg, split="dev")
+    test_comp_dataset = ProceduralCompositionalDataset(cfg, split="test-composicional")
+    test_azar_dataset = ProceduralCompositionalDataset(cfg, split="test-azar")
 
-    model = TRDMv6CausalModel(cfg).to(device)
+    model = TRACECausalModel(cfg).to(device)
     param_groups = model.configure_adamw_groups()
     optimizer = torch.optim.AdamW(param_groups, lr=lr, betas=(0.9, 0.98), eps=1e-8)
 
@@ -92,7 +79,7 @@ def run_seed_training_and_eval(
             indices = torch.randperm(len(train_dataset.samples)).tolist()
             for i in range(0, len(indices) - batch_size + 1, batch_size):
                 batch_samples = [train_dataset.samples[idx] for idx in indices[i : i + batch_size]]
-                yield collate_fn_v6(
+                yield collate_fn(
                     batch_samples,
                     cfg.max_seq_len,
                     cfg.pad_token_id,
@@ -105,7 +92,7 @@ def run_seed_training_and_eval(
     best_dev_score = -1.0
     best_dev_em = -1.0
 
-    ckpt_path = os.path.join(OUTPUT_DIR, f"trdm_v6_seed{seed}_best.pt")
+    ckpt_path = os.path.join(OUTPUT_DIR, f"trace_seed{seed}_best.pt")
 
     warmup_steps = int(steps * warmup_ratio)
     model.train()
@@ -130,14 +117,17 @@ def run_seed_training_and_eval(
         optimizer.step()
 
         if step % 100 == 0 or step == 1:
+            u_loss = out.get("loss_units", torch.tensor(0.0)).item()
+            t_loss = out.get("loss_tens", torch.tensor(0.0)).item()
+            h_loss = out.get("loss_hundreds", torch.tensor(0.0)).item()
             print(
                 f"[S{seed}|{step:04d}/{steps}] Loss: {loss.item():.4f} "
-                f"(S1 Pw/Pms: {out['loss_stage1'].item():.4f}, S2 Tot: {out['loss_stage2'].item():.4f}) | "
+                f"(S1: {out['loss_stage1'].item():.4f}, U: {u_loss:.4f}, D: {t_loss:.4f}, C: {h_loss:.4f}) | "
                 f"SchedP: {sched_p:.2f}"
             )
 
         if step % eval_interval == 0 or step == steps:
-            dev_metrics = evaluate_causal_v6(model, dev_dataset, device)
+            dev_metrics = evaluate_causal(model, dev_dataset, device)
             print(
                 f"  -> DEV EVAL [Paso {step:04d}]: ExactMatch={dev_metrics['exact_match_pct']:.2f}% "
                 f"({dev_metrics['em_count']}/{dev_metrics['total_cases']}) | "
@@ -180,13 +170,13 @@ def run_seed_training_and_eval(
         print(f"[SEMILLA {seed}] Checkpoint óptimo restaurado desde: {ckpt_path} (Paso {ckpt['step']})")
 
     print(f"\n[SEMILLA {seed}] Evaluando DEV final...")
-    final_dev = evaluate_causal_v6(model, dev_dataset, device)
+    final_dev = evaluate_causal(model, dev_dataset, device)
 
     print(f"[SEMILLA {seed}] Evaluando TEST-COMPOSICIONAL (480 casos)...")
-    final_comp = evaluate_causal_v6(model, test_comp_dataset, device)
+    final_comp = evaluate_causal(model, test_comp_dataset, device)
 
     print(f"[SEMILLA {seed}] Evaluando TEST-AZAR (240 casos)...")
-    final_azar = evaluate_causal_v6(model, test_azar_dataset, device)
+    final_azar = evaluate_causal(model, test_azar_dataset, device)
 
     print(
         f"\n[RESUMEN SEMILLA {seed}]\n"
@@ -223,7 +213,7 @@ def aggregate_stats(values: List[float]) -> Dict[str, Any]:
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Master Runner TRDM-v6 para Colab")
+    parser = argparse.ArgumentParser(description="Master Runner TRACE para Colab")
     parser.add_argument("--steps", type=int, default=3000, help="Pasos de entrenamiento por semilla")
     parser.add_argument("--batch_size", type=int, default=32, help="Tamaño de lote")
     parser.add_argument("--lr", type=float, default=3e-4, help="Tasa de aprendizaje")
@@ -247,12 +237,12 @@ def main():
         seeds = DEFAULT_SEEDS
 
     print("=" * 80)
-    print("BASIC-LITE 0.2 (FASE 2) — EXPERIMENTO CONFIRMATORIO TRDM-v6")
+    print("BASIC-LITE TRACE — EXPERIMENTO CONFIRMATORIO")
     print(f"Dispositivo activo: {device} | Semillas a ejecutar: {seeds} | Pasos/semilla: {args.steps}")
     print(f"Directorio de guardado: {OUTPUT_DIR}")
     print("=" * 80)
 
-    out_json = os.path.join(OUTPUT_DIR, "v6_confirmatorio_results.json")
+    out_json = os.path.join(OUTPUT_DIR, "trace_confirmatorio_results.json")
     per_seed_results = {}
 
     # Si ya existe un reporte previo en Drive, recuperar las semillas ya completadas
@@ -288,7 +278,7 @@ def main():
                     summary[f"{split_key}_{metric}"] = aggregate_stats(vals)
 
     final_payload = {
-        "experiment": "TRDM_v6_Causal_2Stage_Confirmatorio",
+        "experiment": "TRACE_Causal_2Stage_Confirmatorio",
         "timestamp": time.strftime("%Y-%m-%d %H:%M:%S"),
         "device": str(device),
         "steps_per_seed": args.steps,

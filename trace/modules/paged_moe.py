@@ -8,9 +8,9 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from trdm.core.weight_manager import WeightMovementManager
-from trdm.layers.bitlinear import BitLinear
-from trdm.modules.moe import TernaryExpert
+from trace.core.weight_manager import WeightMovementManager
+from trace.layers.bitlinear import BitLinear
+from trace.modules.moe import TernaryExpert
 
 
 class MemoryAwarePagedMoE(nn.Module):
@@ -45,8 +45,9 @@ class MemoryAwarePagedMoE(nn.Module):
             self.shared_expert = TernaryExpert(cfg.d_model, cfg.d_ff_expert, eps=cfg.eps)
 
         # Gestor de pesos y caché de memoria
+        self.enable_nvme_io_simulation = getattr(cfg, "enable_nvme_io_simulation", False)
         if weight_manager is None:
-            max_res = getattr(cfg, "max_resident_experts", 2)
+            max_res = getattr(cfg, "max_resident_experts", 2) if self.enable_nvme_io_simulation else cfg.num_experts
             l_cost = getattr(cfg, "lambda_read_cost", 0.35)
             m_cost = getattr(cfg, "mu_compute_cost", 0.05)
             esc_thr = getattr(cfg, "memory_escape_threshold", 0.70)
@@ -101,18 +102,20 @@ class MemoryAwarePagedMoE(nn.Module):
         router_logits = self.router(x_blk)
         raw_scores = F.softmax(router_logits, dim=-1)  # [num_total_blocks, B_blk, E]
 
-        # Aplicar Enrutamiento Consciente de Memoria
-        # Agregamos afinidad por bloque para evaluar costo de I/O
-        block_utilities = raw_scores.mean(dim=1)  # [num_total_blocks, E]
-        adjusted_utilities, escaped = self.weight_manager.compute_memory_aware_scores(
-            block_utilities,
-            allow_escape=True,
-        )
-
-        # Modulación de scores por costo de memoria
-        scores_weight = (adjusted_utilities / block_utilities.clamp(min=1e-5)).unsqueeze(1)
-        scores = (raw_scores * scores_weight).clamp(min=0.0)
-        scores = scores / scores.sum(dim=-1, keepdim=True).clamp(min=1e-6)
+        # Enrutamiento de expertos:
+        if self.enable_nvme_io_simulation:
+            # Modo 30B: Aplicar Enrutamiento Consciente de Memoria S(e) y simulación E/S
+            block_utilities = raw_scores.mean(dim=1)  # [num_total_blocks, E]
+            adjusted_utilities, escaped = self.weight_manager.compute_memory_aware_scores(
+                block_utilities,
+                allow_escape=True,
+            )
+            scores_weight = (adjusted_utilities / block_utilities.clamp(min=1e-5)).unsqueeze(1)
+            scores = (raw_scores * scores_weight).clamp(min=0.0)
+            scores = scores / scores.sum(dim=-1, keepdim=True).clamp(min=1e-6)
+        else:
+            # Modo Directo RAM (Núcleo 870K): Todos los expertos residentes, sin sobrecoste de simulación E/S
+            scores = raw_scores
 
         if active_mask is not None:
             act_blk = active_mask.view(num_total_blocks, B_blk, 1)
@@ -133,14 +136,18 @@ class MemoryAwarePagedMoE(nn.Module):
             if (top_gating[:, e_idx, :] > self.min_gate_threshold).any():
                 active_experts_in_step.add(e_idx)
 
-        # Cargar los expertos necesarios a través del WeightMovementManager (respetando presupuesto de RAM)
+        # Cargar los módulos expertos a ejecutar
         executed_modules = {}
-        for e_idx in active_experts_in_step:
-            exp_mod = self.weight_manager.acquire_expert(e_idx)
-            executed_modules[e_idx] = exp_mod
+        if self.enable_nvme_io_simulation:
+            for e_idx in active_experts_in_step:
+                exp_mod = self.weight_manager.acquire_expert(e_idx)
+                executed_modules[e_idx] = exp_mod
+        else:
+            for e_idx in active_experts_in_step:
+                executed_modules[e_idx] = self.expert_bank[e_idx]
 
-        # Anticipación (Prefetch): Identificar el segundo experto más probable y solicitar prefetch
-        if enable_prefetch and len(active_experts_in_step) > 0:
+        # Anticipación (Prefetch): Identificar el segundo experto más probable y solicitar prefetch en modo 30B
+        if self.enable_nvme_io_simulation and enable_prefetch and len(active_experts_in_step) > 0:
             avg_scores = scores.mean(dim=(0, 1))
             sorted_e = torch.argsort(avg_scores, descending=True)
             for cand in sorted_e.tolist():

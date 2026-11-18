@@ -26,11 +26,13 @@ class HierarchicalContextManager:
         compressed_segment_size: int = 32,
         db_path: str = ":memory:",
         embedding_dim: int = 192,
+        enable_sqlite_context_l3: bool = False,
     ):
         self.active_window_size = active_window_size
         self.compressed_segment_size = compressed_segment_size
         self.db_path = db_path
         self.embedding_dim = embedding_dim
+        self.enable_sqlite_context_l3 = enable_sqlite_context_l3
 
         # Nivel 1: Buffer Activo en RAM
         self.active_token_ids: List[int] = []
@@ -39,9 +41,12 @@ class HierarchicalContextManager:
         # Nivel 2: Segmentos Comprimidos Latentes en RAM
         self.compressed_segments: List[Dict[str, Any]] = []
 
-        # Nivel 3: Archivo Persistente (Base de datos SQLite indexada)
-        self.conn = sqlite3.connect(self.db_path)
-        self._init_archive_db()
+        # Nivel 3: Archivo Persistente (Base de datos SQLite indexada - Modo 30B)
+        if self.enable_sqlite_context_l3:
+            self.conn = sqlite3.connect(self.db_path)
+            self._init_archive_db()
+        else:
+            self.conn = None
 
         self.total_tokens_ingested: int = 0
         self.retrieval_queries_count: int = 0
@@ -90,27 +95,26 @@ class HierarchicalContextManager:
             start_idx = self.total_tokens_ingested - len(self.active_token_ids) - seg_len
             end_idx = start_idx + seg_len
 
-            # 1. Archivar en Nivel 3 (Original exacto)
-            raw_bytes = bytes([t for t in seg_tokens if t < 256])
-            raw_text = raw_bytes.decode("utf-8", errors="replace")
-            # Extraer palabras clave simples para indexación
-            words = [w.strip(":, \n\t") for w in raw_text.split() if len(w.strip(":, \n\t")) > 1]
-            keywords_str = " ".join(words)
-
-            cursor = self.conn.cursor()
-            cursor.execute(
-                """
-                INSERT INTO context_archive (start_token_idx, end_token_idx, raw_bytes, raw_text, keywords)
-                VALUES (?, ?, ?, ?, ?)
-                """,
-                (start_idx, end_idx, raw_bytes, raw_text, keywords_str),
-            )
-            self.conn.commit()
+            # 1. Archivar en Nivel 3 (Original exacto si está activo)
+            chunk_id = None
+            if self.enable_sqlite_context_l3 and self.conn is not None:
+                cursor = self.conn.cursor()
+                cursor.execute(
+                    """
+                    INSERT INTO context_archive (start_token_idx, end_token_idx, raw_bytes, raw_text, keywords)
+                    VALUES (?, ?, ?, ?, ?)
+                    """,
+                    (start_idx, end_idx, raw_bytes, raw_text, keywords_str),
+                )
+                self.conn.commit()
+                chunk_id = cursor.lastrowid
+            else:
+                chunk_id = len(self.compressed_segments) + 1
 
             # 2. Comprimir en Nivel 2 (Resumen latente)
             # Representación compacta del segmento (ej. vector latente promedio)
             seg_summary = {
-                "chunk_id": cursor.lastrowid,
+                "chunk_id": chunk_id,
                 "start_idx": start_idx,
                 "end_idx": end_idx,
                 "token_count": seg_len,
@@ -145,6 +149,24 @@ class HierarchicalContextManager:
 
         # Priorizar términos específicos (ej. identificadores con guion bajo o longitud > 4)
         query_terms.sort(key=lambda x: (1 if "_" in x else 0, len(x)), reverse=True)
+
+        if not self.enable_sqlite_context_l3 or self.conn is None:
+            # Modo Directo en RAM: Búsqueda rápida sobre resúmenes latentes en memoria
+            results = []
+            for seg in self.compressed_segments:
+                seg_words = seg.get("keywords", [])
+                hits = sum(1 for q in query_terms if q.lower() in [w.lower() for w in seg_words])
+                if hits > 0:
+                    results.append({
+                        "chunk_id": seg["chunk_id"],
+                        "start_pos": seg["start_idx"],
+                        "end_pos": seg["end_idx"],
+                        "text": " ".join(seg_words),
+                        "relevance_score": hits,
+                    })
+            results.sort(key=lambda x: x["relevance_score"], reverse=True)
+            self.retrieval_hits_count += len(results[:top_k])
+            return results[:top_k]
 
         cursor = self.conn.cursor()
         results = []

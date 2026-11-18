@@ -8,18 +8,19 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from trdm.core.weight_manager import WeightMovementManager
-from trdm.layers.bitlinear import BitLinear
-from trdm.layers.embeddings import SinusoidalStepEncoding
-from trdm.layers.norm import RMSNorm
-from trdm.modules.mla_attention import MultiHeadLatentAttention
-from trdm.modules.paged_moe import MemoryAwarePagedMoE
+from trace.core.weight_manager import WeightMovementManager
+from trace.layers.bitlinear import BitLinear
+from trace.layers.embeddings import SinusoidalStepEncoding
+from trace.layers.norm import RMSNorm
+from trace.modules.attention import BlockCausalGQATernaryAttention
+from trace.modules.mla_attention import MultiHeadLatentAttention
+from trace.modules.paged_moe import MemoryAwarePagedMoE
 
 
 class SharedResidentTernaryCore(nn.Module):
     """
-    Núcleo ternario compartido residente de Basic-Lite 0.2:
-    - Multi-Head Latent Attention (MLA) para compresión de caché KV activa.
+    Núcleo ternario compartido residente de Basic-Lite TRACE:
+    - Multi-Head Latent Attention (MLA) o Block-Causal GQA según sistema de activación.
     - MoE con paginación de expertos y enrutamiento consciente de memoria RAM/SSD.
     - Dinámica dual de razonamiento (z_r) y respuesta (y_r) con escala residual compartida.
     """
@@ -27,13 +28,17 @@ class SharedResidentTernaryCore(nn.Module):
     def __init__(self, cfg, weight_manager: Optional[WeightMovementManager] = None):
         super().__init__()
         self.cfg = cfg
+        self.use_mla = getattr(cfg, "use_mla", False)
         self.norm_z = RMSNorm(cfg.d_model, eps=cfg.eps)
         self.norm_y = RMSNorm(cfg.d_model, eps=cfg.eps)
         self.norm_moe = RMSNorm(cfg.d_model, eps=cfg.eps)
         self.norm_refine = RMSNorm(cfg.d_model, eps=cfg.eps)
 
         self.anchor_proj = BitLinear(cfg.d_model, cfg.d_model, eps=cfg.eps)
-        self.attn = MultiHeadLatentAttention(cfg)
+        if self.use_mla:
+            self.attn = MultiHeadLatentAttention(cfg)
+        else:
+            self.attn = BlockCausalGQATernaryAttention(cfg)
         self.paged_moe = MemoryAwarePagedMoE(cfg, weight_manager=weight_manager)
         self.answer_updater = BitLinear(cfg.d_model, cfg.d_model, eps=cfg.eps)
 
@@ -90,15 +95,25 @@ class SharedResidentTernaryCore(nn.Module):
 
         joint_state = self.norm_z(z_r) + self.norm_y(y_r) + anchor_feat + e_t + e_r
 
-        # Multi-Head Latent Attention (MLA)
-        attn_out, updated_latent_kv = self.attn(
-            joint_state,
-            latent_kv_cache=latent_kv_cache,
-            start_pos=start_pos,
-            record_telemetry=record_telemetry,
-            integer_mode=integer_mode,
-            add_sub_mode=add_sub_mode,
-        )
+        # Atención: Multi-Head Latent Attention (MLA) o BlockCausalGQATernaryAttention según activación
+        if self.use_mla:
+            attn_out, updated_latent_kv = self.attn(
+                joint_state,
+                latent_kv_cache=latent_kv_cache,
+                start_pos=start_pos,
+                record_telemetry=record_telemetry,
+                integer_mode=integer_mode,
+                add_sub_mode=add_sub_mode,
+            )
+        else:
+            attn_out, updated_latent_kv = self.attn(
+                joint_state,
+                kv_cache=latent_kv_cache,
+                start_pos=start_pos,
+                record_telemetry=record_telemetry,
+                integer_mode=integer_mode,
+                add_sub_mode=add_sub_mode,
+            )
         eff_alpha = self.alpha_z * step_scale
         eff_beta = self.beta_y * step_scale
 

@@ -9,17 +9,17 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from trdm.core.types import ModelOutput
-from trdm.layers.abacus import AbacusEmbedding
-from trdm.layers.bitlinear import BitLinear
-from trdm.layers.embeddings import SinusoidalStepEncoding
-from trdm.layers.norm import RMSNorm
-from trdm.modules.resident_core import SharedResidentTernaryCore
+from trace.core.types import ModelOutput
+from trace.layers.abacus import AbacusEmbedding
+from trace.layers.bitlinear import BitLinear
+from trace.layers.embeddings import SinusoidalStepEncoding
+from trace.layers.norm import RMSNorm
+from trace.modules.resident_core import SharedResidentTernaryCore
 
 
-class TRDMCausalModel(nn.Module):
+class TRACECausalModel(nn.Module):
     """
-    TRDM Causal: Arquitectura Causal de 2 Etapas con Abacus Embeddings (Basic-Lite 0.2).
+    TRACE Causal: Arquitectura Causal de 2 Etapas con Abacus Embeddings (Basic-Lite TRACE).
     
     Innovaciones Arquitectónicas:
     1. Abacus Positional Embeddings:
@@ -39,7 +39,12 @@ class TRDMCausalModel(nn.Module):
 
         # 1. Capas de Entrada
         self.token_emb = nn.Embedding(cfg.vocab_size, cfg.d_model)
-        self.abacus_emb = AbacusEmbedding(cfg.d_model, max_ranks=16, delimiter_rank=15)
+        self.abacus_emb = AbacusEmbedding(
+            cfg.d_model,
+            max_ranks=16,
+            delimiter_rank=15,
+            mask_token_id=cfg.mask_token_id,
+        )
         self.time_emb = SinusoidalStepEncoding(cfg.d_model)
 
         # 2. Núcleo Ternario Recursivo Residente (Backbone con BitLinear W1.58A8)
@@ -212,23 +217,67 @@ class TRDMCausalModel(nn.Module):
         # Desacoplamiento de gradientes para evitar retropropagación destructiva a través del anclaje
         x_stage2 = x_stage2.detach()
 
-        # --- EJECUCIÓN ETAPA 2 (Sumas Finales Condicionadas) ---
-        logits_stage2 = self.forward_backbone(x_stage2, t_noise)
+        # --- ETAPA 2: CAMPO CAUSAL POR COLUMNAS (UNIDADES -> DECENAS -> CENTENAS) ---
+        # Sub-pasada 2.1: Predicción de Unidades (offset +2 de cada rango)
+        logits_units = self.forward_backbone(x_stage2, t_noise)
+        mask_units = torch.zeros(B, L, dtype=torch.bool, device=device)
+        for b in range(B):
+            mask_units[b, watt_spans[b][0] + 2] = True
+            mask_units[b, ms_spans[b][0] + 2] = True
+        loss_units = F.cross_entropy(logits_units[mask_units], x_0[mask_units])
 
-        # Pérdida de Etapa 2
-        loss_stage2 = F.cross_entropy(
-            logits_stage2[stage2_digit_mask],
-            x_0[stage2_digit_mask],
-        )
+        # Inyección causal de Unidades
+        x_tens = x_stage2.clone()
+        with torch.no_grad():
+            preds_units = logits_units.argmax(dim=-1)
+        for b in range(B):
+            u_gt = (random.random() < scheduled_sampling_p) if self.training else False
+            for r_span in (watt_spans[b], ms_spans[b]):
+                u_idx = r_span[0] + 2
+                x_tens[b, u_idx] = x_0[b, u_idx] if u_gt else preds_units[b, u_idx]
+        x_tens = x_tens.detach()
 
+        # Sub-pasada 2.2: Predicción de Decenas (offset +1 de cada rango)
+        logits_tens = self.forward_backbone(x_tens, t_noise)
+        mask_tens = torch.zeros(B, L, dtype=torch.bool, device=device)
+        for b in range(B):
+            mask_tens[b, watt_spans[b][0] + 1] = True
+            mask_tens[b, ms_spans[b][0] + 1] = True
+        loss_tens = F.cross_entropy(logits_tens[mask_tens], x_0[mask_tens])
+
+        # Inyección causal de Decenas
+        x_hundreds = x_tens.clone()
+        with torch.no_grad():
+            preds_tens = logits_tens.argmax(dim=-1)
+        for b in range(B):
+            t_gt = (random.random() < scheduled_sampling_p) if self.training else False
+            for r_span in (watt_spans[b], ms_spans[b]):
+                t_idx = r_span[0] + 1
+                x_hundreds[b, t_idx] = x_0[b, t_idx] if t_gt else preds_tens[b, t_idx]
+        x_hundreds = x_hundreds.detach()
+
+        # Sub-pasada 2.3: Predicción de Centenas (offset +0 de cada rango)
+        logits_hundreds = self.forward_backbone(x_hundreds, t_noise)
+        mask_hundreds = torch.zeros(B, L, dtype=torch.bool, device=device)
+        for b in range(B):
+            mask_hundreds[b, watt_spans[b][0]] = True
+            mask_hundreds[b, ms_spans[b][0]] = True
+        loss_hundreds = F.cross_entropy(logits_hundreds[mask_hundreds], x_0[mask_hundreds])
+
+        loss_stage2 = loss_units + loss_tens + loss_hundreds
         total_loss = loss_stage1 + loss_stage2
 
         return {
             "loss": total_loss,
             "loss_stage1": loss_stage1,
             "loss_stage2": loss_stage2,
+            "loss_units": loss_units,
+            "loss_tens": loss_tens,
+            "loss_hundreds": loss_hundreds,
             "logits_stage1": logits_stage1,
-            "logits_stage2": logits_stage2,
+            "logits_units": logits_units,
+            "logits_tens": logits_tens,
+            "logits_hundreds": logits_hundreds,
             "stage1_mask": stage1_digit_mask,
             "stage2_mask": stage2_digit_mask,
         }
@@ -240,10 +289,13 @@ class TRDMCausalModel(nn.Module):
         override_scratchpad_tokens: Optional[Tuple[torch.Tensor, torch.Tensor]] = None,
     ) -> Tuple[str, Dict[str, Any]]:
         """
-        Inferencia Causal Determinista en 2 Pasadas (Zero Exposure Bias):
+        Inferencia Causal Determinista por Columnas Decimales (Zero Exposure Bias):
         1. Emite subtotales Pw, Pms (o utiliza override_scratchpad_tokens para auditoría causal).
         2. Fija Pw, Pms en la secuencia de entrada como hechos consumados del contexto.
-        3. Emite totales finales watt, ms condicionados a dichos subtotales.
+        3. Campo Causal Decimal de Derecha a Izquierda:
+           3.1. Emite unidades de watt y ms.
+           3.2. Fija unidades en contexto y emite decenas (acarreo_0 resuelto).
+           3.3. Fija decenas en contexto y emite centenas (acarreo_1 resuelto).
         """
         self.eval()
         device = next(self.parameters()).device
@@ -288,10 +340,30 @@ class TRDMCausalModel(nn.Module):
             x[0, pw_start:pw_end] = pred_pw_tokens
             x[0, pms_start:pms_end] = pred_pms_tokens
 
-        # --- PASADA 2: Predecir Totales Condicionados ---
-        logits_2 = self.forward_backbone(x, t_noise)
-        pred_watt_tokens = logits_2[0, watt_start:watt_end].argmax(dim=-1)
-        pred_ms_tokens = logits_2[0, ms_start:ms_end].argmax(dim=-1)
+        # --- ETAPA 2: CAMPO CAUSAL POR COLUMNAS (DERECHA A IZQUIERDA) ---
+        # 3.1. Predecir Unidades (offset +2)
+        logits_units = self.forward_backbone(x, t_noise)
+        pred_w_u = logits_units[0, watt_start + 2].argmax(dim=-1)
+        pred_ms_u = logits_units[0, ms_start + 2].argmax(dim=-1)
+        x[0, watt_start + 2] = pred_w_u
+        x[0, ms_start + 2] = pred_ms_u
+
+        # 3.2. Predecir Decenas (offset +1, con unidades fijadas como hechos del contexto)
+        logits_tens = self.forward_backbone(x, t_noise)
+        pred_w_t = logits_tens[0, watt_start + 1].argmax(dim=-1)
+        pred_ms_t = logits_tens[0, ms_start + 1].argmax(dim=-1)
+        x[0, watt_start + 1] = pred_w_t
+        x[0, ms_start + 1] = pred_ms_t
+
+        # 3.3. Predecir Centenas (offset +0, con decenas y unidades fijadas en contexto)
+        logits_hundreds = self.forward_backbone(x, t_noise)
+        pred_w_h = logits_hundreds[0, watt_start].argmax(dim=-1)
+        pred_ms_h = logits_hundreds[0, ms_start].argmax(dim=-1)
+        x[0, watt_start] = pred_w_h
+        x[0, ms_start] = pred_ms_h
+
+        pred_watt_tokens = torch.stack([pred_w_h, pred_w_t, pred_w_u])
+        pred_ms_tokens = torch.stack([pred_ms_h, pred_ms_t, pred_ms_u])
 
         # Decodificación final de caracteres ASCII
         pw_str = "".join(chr(int(t)) for t in actual_pw_tokens)
@@ -319,7 +391,3 @@ class TRDMCausalModel(nn.Module):
         }
 
         return full_output_str, meta
-
-
-# Alias de compatibilidad
-TRDMv6CausalModel = TRDMCausalModel
