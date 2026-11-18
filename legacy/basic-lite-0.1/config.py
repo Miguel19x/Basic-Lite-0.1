@@ -1,0 +1,89 @@
+from dataclasses import dataclass
+from typing import Tuple
+
+
+@dataclass
+class HybridConfig:
+    # Entorno objetivo: Intel Core i3-1115G4 (2 núcleos físicos / 4 hilos lógicos, 16 GB RAM, Linux)
+    # Medición empírica: 2 hilos físicos evitan contención OpenMP/AVX en tensores medianos (~1.67x más rápido que 4 hilos)
+    seed: int = 42
+    cpu_threads: int = 2
+    device: str = "cpu"
+
+    # Vocabulario por bytes (0..255) + 4 tokens especiales
+    vocab_size: int = 260
+    pad_token_id: int = 256
+    mask_token_id: int = 257
+    bos_token_id: int = 258
+    eos_token_id: int = 259
+
+    # Dimensiones de secuencia y bloques causales (CDLM + GQA)
+    max_seq_len: int = 160           # 10 bloques de 16 bytes (soporte garantizado para entrada enriquecida de Opción A)
+    block_size: int = 16             # 10 bloques de 16 bytes
+    d_model: int = 192
+    n_heads: int = 4
+    n_kv_heads: int = 2
+    d_ff_expert: int = 384
+
+    # Principio 0: Traza supervisada compacta y Operandos Explícitos (Hito 2 / Opción A)
+    use_scratchpad: bool = True      # Si True, incluye pw y pms antes de watt y ms con consistencia aditiva
+    use_explicit_operands: bool = False # Opción A: proporciona operandos numéricos bw, mw, aw, ow, bms, mms, ams, oms en prompt
+
+    # Principio 1: Capas ternarias BitLinear (W1.58A8)
+    activation_bits: int = 8
+    use_integer_inference: bool = False
+    use_add_sub_inference: bool = False
+    eps: float = 1e-6
+
+    # Principio 2: Difusión discreta enmascarada + Consistencia CDLM
+    min_mask_rate: float = 0.15
+    max_mask_rate: float = 1.0
+    diffusion_steps_per_block: int = 4
+    consistency_loss_weight: float = 0.10
+
+    # Principio 3: Recursión con codificación sinusoidal continua (sin embeddings huérfanos)
+    num_recursions: int = 2          # Profundidad base en entrenamiento (H1 evalúa R in {1,2,4,8})
+    randomize_train_recursions: bool = False  # Si True, muestrea R_train en {1, 2, 3}
+    nograd_recursions: int = 0       # 0 para que todos los pasos reciban gradiente limpio
+    intermediate_loss_weight: float = 0.25
+    halt_threshold: float = 0.90
+    ponder_loss_weight: float = 0.01
+
+    # Ponderación contra el techo trivial (priorizar bytes de dígitos sobre plantilla y PAD)
+    digit_token_weight: float = 6.0  # Peso x6 en posiciones de dígitos ('0'..'9')
+    template_token_weight: float = 3.5 # Peso suficiente para evitar fallos ortográficos (sub_w:, sub_ms:, etc.)
+    pad_token_weight: float = 0.20   # Peso reducido en PAD post-EOS
+
+    # Principio 4: Modularidad selectiva intra-bloque y Grafo Disperso de Módulos (Expert-Choice MoE)
+    num_experts: int = 4
+    capacity_factor: float = 2.0
+    use_shared_expert: bool = True            # Experto compartido permanente estilo DeepSeek-V3
+    use_qk_norm: bool = True                  # Normalización RMSNorm a Q y K estilo Qwen 2.5 / Gemma 2
+    use_logit_softcapping: bool = True        # Acotación hiperbólica de logits (cap 30.0) estilo Gemma 2
+    logit_cap_value: float = 30.0
+    use_dynamic_remasking: bool = False       # Desenmascaramiento progresivo monotónico (sin oscilación de re-enmascaramiento)
+    sparse_expert_dispatch: bool = True       # Omite físicamente plazas PAD e inactivas (gate <= min_gate_threshold)
+    use_sparse_module_graph: bool = True      # Restringe transiciones entre expertos por aristas del grafo en r > 0
+    graph_out_degree: int = 2                 # Aristas permitidas por nodo experto en r > 0 (auto-bucle + vecino)
+    graph_capacity_decay: float = 0.75        # Amortiguación de presupuesto k en recursiones sucesivas r > 0
+    min_gate_threshold: float = 1e-4          # Umbral mínimo para ejecutar un token en un nodo experto
+
+    # Motor de ejecución con presupuesto (Lazy Logits, Compilación y Separación Dev/Experimento)
+    lazy_vocab_projection: bool = True        # Proyecta al vocabulario solo los estados supervisados en train y R final en eval
+    use_torch_compile: bool = False           # Compila regiones estables (expertos ternarios) si el backend C++ está activo
+    dev_mode: bool = False                    # Modo rápido de desarrollo (subconjunto fijo de validación y R=2)
+    val_samples_full: int = 384
+    val_samples_dev: int = 64
+    eval_recursions_full: Tuple[int, ...] = (1, 2, 4)
+    eval_recursions_dev: Tuple[int, ...] = (2,)
+
+    # Optimización AdamW (decaimiento desacoplado)
+    batch_size: int = 16
+    learning_rate: float = 2.0e-3
+    weight_decay: float = 0.03
+    betas: tuple = (0.9, 0.95)
+    max_steps: int = 800             # Presupuesto ampliado para consolidar aritmética
+    eval_every: int = 100
+    grad_clip: float = 1.0
+    checkpoint_path: str = "trdm_v4_checkpoint.pt"
+    bitcos_export_path: str = "trdm_v4_bitcos.bin"

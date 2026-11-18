@@ -1,3 +1,8 @@
+# Basic-Lite
+# Copyright © 2026 Miguel Angel Aranguren Ramirez (Miguel19x)
+# Todos los derechos reservados.
+# Véanse LICENSE.txt y THIRD_PARTY_NOTICES.md.
+
 from trdm.ops.ternary_cpu import (
     ternary_addsub_matmul,
     is_kernel_available,

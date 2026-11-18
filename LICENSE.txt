@@ -1,0 +1,36 @@
+Basic-Lite TRACE — Licencia de Evaluación e Investigación
+
+Copyright © 2026 Miguel Angel Aranguren Ramirez (Miguel19x)
+Todos los derechos reservados.
+
+Por la presente se concede permiso gratuito a cualquier persona que obtenga una copia
+de este software y la documentación asociada («Basic-Lite TRACE»), para:
+
+1. Inspeccionar, estudiar, clonar y compilar el código fuente con fines de estudio,
+   auditoría y evaluación personal o académica.
+2. Ejecutar localmente los scripts de evaluación, entrenamiento piloto y benchmarks
+   para reproducir y contrastar de manera independiente los resultados empíricos publicados.
+3. Citar el proyecto y sus hallazgos en investigaciones científicas, artículos o análisis
+   técnicos, haciendo referencia expresa a la autoría y al repositorio oficial.
+
+CONDICIONES Y RESERVA DE DERECHOS:
+
+* USO COMERCIAL: Queda expresamente reservado por el titular cualquier uso comercial,
+  lucrativo, sublicenciamiento, distribución cerrada o provisión de este software
+  como servicio accesible a través de red (SaaS/API) por parte de terceros sin un
+  acuerdo comercial previo y por escrito con el titular.
+* MODIFICACIONES Y OBRAS DERIVADAS: La distribución pública de versiones modificadas
+  o bifurcaciones (forks) requiere conservar íntegros los avisos de autoría originales,
+  hacer constar de forma clara las modificaciones introducidas y no presentarse como
+  la versión oficial del proyecto.
+* SOFTWARE DE TERCEROS: Las dependencias y librerías externas (PyTorch, NumPy, SQLite)
+  se rigen por sus respectivas licencias de código abierto, detalladas en
+  THIRD_PARTY_NOTICES.md.
+
+OFERTA DE SERVICIOS Y LICENCIAS EMPRESARIALES:
+Para adaptaciones a medida, integración en servidores locales o edge de empresas,
+soporte directo del fundador o acuerdos de evaluación comercial privada, contactar a:
+
+Miguel Angel Aranguren Ramirez
+Correo electrónico: leohxone@gmail.com
+Repositorio oficial: https://github.com/Miguel19x/Basic-Lite-TRACE

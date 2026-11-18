@@ -28,3 +28,20 @@ Thumbs.db
 .memory
 .memory*
 
+# Personalizaciones de agentes, reglas locales y skills (Antigravity / Gemini)
+.agent
+.agent/
+.agent*
+.agents
+.agents/
+.agents*
+skills/
+.skills/
+GEMINI.md
+AGENTS.md
+
+# Expediente privado y confidencial (OMPI - Secreto empresarial y patentes)
+private/
+private/*
+
+

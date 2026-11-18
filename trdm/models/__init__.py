@@ -1,9 +1,11 @@
-from trdm.models.trdm_v4 import TernaryRecursiveDiffusionLM
-from trdm.models.trdm_v5 import TernaryRecursiveDiffusionLM_v5
-from trdm.models.trdm_v6_causal import TRDMv6CausalModel
+# Basic-Lite
+# Copyright © 2026 Miguel Angel Aranguren Ramirez (Miguel19x)
+# Todos los derechos reservados.
+# Véanse LICENSE.txt y THIRD_PARTY_NOTICES.md.
+
+from trdm.models.causal import TRDMCausalModel, TRDMv6CausalModel
 
 __all__ = [
-    "TernaryRecursiveDiffusionLM",
-    "TernaryRecursiveDiffusionLM_v5",
+    "TRDMCausalModel",
     "TRDMv6CausalModel",
 ]
