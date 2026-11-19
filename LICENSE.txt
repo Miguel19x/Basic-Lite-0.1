@@ -1,36 +1,127 @@
-Basic-Lite TRACE — Licencia de Evaluación e Investigación
+Basic-Lite TRACE — Licencia de Investigación, Docencia y Evaluación
 
-Copyright © 2026 Miguel Angel Aranguren Ramirez (Miguel19x)
-Todos los derechos reservados.
+Copyright © 2026 Miguel19x
+Todos los derechos morales y patrimoniales reservados.
 
-Por la presente se concede permiso gratuito a cualquier persona que obtenga una copia
-de este software y la documentación asociada («Basic-Lite TRACE»), para:
+Por la presente se concede autorización gratuita a cualquier persona física o jurídica
+que obtenga una copia de este software y su documentación asociada («Basic-Lite TRACE»),
+para ejercer exclusivamente los siguientes derechos y bajo las condiciones aquí descritas:
 
-1. Inspeccionar, estudiar, clonar y compilar el código fuente con fines de estudio,
-   auditoría y evaluación personal o académica.
-2. Ejecutar localmente los scripts de evaluación, entrenamiento piloto y benchmarks
-   para reproducir y contrastar de manera independiente los resultados empíricos publicados.
-3. Citar el proyecto y sus hallazgos en investigaciones científicas, artículos o análisis
-   técnicos, haciendo referencia expresa a la autoría y al repositorio oficial.
+1. INSPECCIÓN, AUDITORÍA Y ESTUDIO:
+   Clonar, examinar, auditar y compilar el código fuente con fines de análisis técnico,
+   verificación de seguridad y estudio personal o académico.
 
-CONDICIONES Y RESERVA DE DERECHOS:
+2. INVESTIGACIÓN Y EXPERIMENTACIÓN:
+   a) Ejecutar el software y sus scripts para reproducir, contrastar y verificar de manera
+      independiente los resultados empíricos y métricas publicadas.
+   b) Diseñar, ejecutar y evaluar nuevos experimentos y variantes técnicas.
+   c) Modificar el código fuente para realizar las actividades de investigación, docencia
+      y evaluación expresamente autorizadas por esta licencia.
+   d) Publicar hallazgos derivados, debiendo citar el uso del proyecto y vincular la
+      referencia al repositorio oficial.
+   ALCANCE: Se permite la investigación académica y educativa, incluida aquella que reciba
+   financiación empresarial o institucional. La mera financiación no constituye por sí sola
+   un encargo comercial.
+   La investigación y experimentación realizadas internamente por organizaciones comerciales
+   quedan limitadas a la evaluación del apartado 4, salvo acuerdo escrito distinto con
+   Miguel19x. Los proyectos realizados por encargo directo de una organización comercial, en
+   régimen de consultoría para ella o destinados a su uso operativo requieren un acuerdo
+   comercial previo. Esta última regla no impide la evaluación interna expresamente
+   autorizada en el apartado 4.
 
-* USO COMERCIAL: Queda expresamente reservado por el titular cualquier uso comercial,
-  lucrativo, sublicenciamiento, distribución cerrada o provisión de este software
-  como servicio accesible a través de red (SaaS/API) por parte de terceros sin un
-  acuerdo comercial previo y por escrito con el titular.
-* MODIFICACIONES Y OBRAS DERIVADAS: La distribución pública de versiones modificadas
-  o bifurcaciones (forks) requiere conservar íntegros los avisos de autoría originales,
-  hacer constar de forma clara las modificaciones introducidas y no presentarse como
-  la versión oficial del proyecto.
-* SOFTWARE DE TERCEROS: Las dependencias y librerías externas (PyTorch, NumPy, SQLite)
-  se rigen por sus respectivas licencias de código abierto, detalladas en
-  THIRD_PARTY_NOTICES.md.
+3. DOCENCIA Y FORMACIÓN ACADÉMICA:
+   Utilizar, ejecutar, adaptar y compartir el software en clases, cursos, talleres y
+   laboratorios educativos. La existencia de matrícula académica, cuotas de inscripción o
+   financiación institucional no excluye por sí sola esta autorización, siempre que la
+   actividad no constituya una explotación comercial o productiva reservada.
 
-OFERTA DE SERVICIOS Y LICENCIAS EMPRESARIALES:
-Para adaptaciones a medida, integración en servidores locales o edge de empresas,
-soporte directo del fundador o acuerdos de evaluación comercial privada, contactar a:
+4. EVALUACIÓN TÉCNICA EMPRESARIAL (PRUEBA DE CONCEPTO):
+   Instalar y ejecutar el software en infraestructura propia de organizaciones comerciales,
+   empleando datos de prueba o datos reales en un entorno aislado, con el fin de evaluar la
+   viabilidad técnica de la tecnología.
+   LÍMITES OPERATIVOS: Esta autorización permite elaborar informes técnicos internos y valorar
+   la adopción o contratación de la tecnología. No permite utilizar los resultados, predicciones
+   o procesos del software para atender a clientes, prestar servicios a terceros, integrar el
+   código en cadenas de producción activas ni ejecutar operaciones ordinarias del negocio sin
+   un acuerdo comercial previo.
 
-Miguel Angel Aranguren Ramirez
+5. ACCESO Y SERVICIOS REMOTOS EN DOCENCIA E INVESTIGACIÓN:
+   Habilitar acceso o interfaces remotas al software para el desarrollo de las actividades de
+   investigación y docencia expresamente autorizadas (incluyendo laboratorios académicos y
+   servicios de revisión científica). La existencia de matrícula o financiación externa no
+   excluye por sí sola este acceso remoto. La provisión de servicios remotos comerciales o
+   productivos queda reservada al apartado de condiciones generales.
+
+6. CONDICIONES DE DISTRIBUCIÓN:
+   a) Copias originales: Se autoriza la distribución de copias íntegras del software,
+      conservando sin alteración los avisos de copyright de Miguel19x y este texto de licencia.
+   b) Versiones modificadas y bifurcaciones (forks): Se autoriza la distribución pública de
+      modificaciones para los fines permitidos exclusivamente si:
+      i.   Conservan íntegros los avisos de autoría originales y no se presentan como la versión
+           oficial ni sugieren patrocinio o respaldo de Miguel19x.
+      ii.  Documentan de forma clara y visible los cambios técnicos introducidos.
+      iii. Se distribuyen obligatoriamente bajo los mismos términos y restricciones de esta licencia.
+      iv.  Se acompaña de —o se facilita acceso directo, público y gratuito durante la vigencia
+           de la distribución a— su código fuente correspondiente (versión exacta modificada,
+           archivos propios de compilación, instrucciones y avisos aplicables).
+   c) Binarios precompilados: Se autoriza distribuir binarios únicamente si van acompañados
+      de los avisos de autoría, este texto de licencia y su código fuente correspondiente (o un
+      mecanismo de acceso público, directo y gratuito a dicho código exacto bajo esta licencia
+      durante la vigencia de la distribución). No se autoriza la distribución de binarios
+      cerrados sin acceso al fuente.
+
+CONDICIONES GENERALES Y RESERVAS:
+
+* RESERVA DE EXPLOTACIÓN COMERCIAL Y PRODUCCIÓN:
+  Salvo las actividades expresamente autorizadas por esta licencia, queda reservado por el
+  titular cualquier uso comercial, lucrativo, integración en productos cerrados, provisión
+  de servicios accesibles por red (SaaS, APIs comerciales o hosting gestionado) a terceros,
+  y el uso operativo en el negocio ordinario, requiriéndose en tales casos un acuerdo comercial
+  escrito con Miguel19x.
+
+* RESERVA DE MINERÍA DE TEXTOS, DATOS Y ENTRENAMIENTO DE IA:
+  De conformidad con el Artículo 4(3) de la Directiva (UE) 2019/790 y normativas aplicables,
+  el titular formula reserva expresa de los derechos de reproducción y extracción para minería
+  de textos, datos y entrenamiento o ajuste de modelos de inteligencia artificial con fines
+  comerciales. Esta reserva no afecta a los usos amparados por excepciones legales imperativas,
+  en particular las relativas a investigación científica institucional.
+
+* COMPONENTES DE TERCEROS:
+  Las librerías y dependencias externas se rigen por sus respectivas licencias originales,
+  recogidas en THIRD_PARTY_NOTICES.md.
+
+NATURALEZA EXPERIMENTAL, DATOS Y RESPONSABILIDAD:
+
+1. ESTADO EXPERIMENTAL Y SIN COMPROMISO DE ESTABILIDAD:
+   Basic-Lite TRACE es un prototipo experimental en desarrollo. Su funcionamiento en determinadas
+   pruebas no implica estabilidad, ausencia de errores ni idoneidad para producción o para una
+   aplicación concreta. No existe compromiso de compatibilidad retroactiva entre versiones.
+
+2. ALCANCE DE LA PUBLICACIÓN Y SERVICIOS NO INCLUIDOS:
+   Esta publicación no incluye un servicio de alojamiento, custodia o procesamiento de conjuntos
+   de datos del usuario, revisión jurídica de datos, certificación de seguridad ni validación
+   de aplicaciones finales. Quien utilice el software deberá evaluar las autorizaciones, medidas
+   de protección y requisitos aplicables a sus datos y a su uso previsto. Cualquier servicio
+   posterior que implique acceso a datos requerirá un acuerdo separado.
+
+3. AUSENCIA DE SOPORTE GARANTIZADO:
+   La publicación del código no genera obligación de mantenimiento, asistencia técnica ni
+   corrección de errores en plazos determinados. Cualquier servicio profesional o soporte
+   garantizado requerirá un acuerdo separado.
+
+4. EXONERACIÓN DE RESPONSABILIDAD («TAL CUAL»):
+   En la máxima medida permitida por la legislación aplicable, este software se entrega
+   «TAL CUAL» («AS IS»), sin garantías de ninguna clase, expresas o implícitas, incluyendo
+   garantías de comerciabilidad o adecuación a un fin particular.
+
+   En la máxima medida permitida por la ley aplicable, el titular no responderá por daños directos,
+   indirectos, incidentales o consecuenciales derivados del uso o de la imposibilidad de uso del
+   software, salvo en aquellos supuestos en que dicha limitación resulte expresamente prohibida
+   por normas legales inderogables.
+
+LICENCIAMIENTO COMERCIAL Y CONTACTO:
+Para acuerdos comerciales, despliegues en producción o servicios profesionales:
+
+Miguel19x
 Correo electrónico: leohxone@gmail.com
 Repositorio oficial: https://github.com/Miguel19x/Basic-Lite-TRACE

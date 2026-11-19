@@ -14,6 +14,6 @@ de esta versión histórica («Basic-Lite 0.1»), para:
 CONDICIONES Y RESERVA DE DERECHOS:
 * Queda expresamente reservado cualquier uso comercial o sublicenciamiento sin autorización previa por escrito del autor.
 * El desarrollo activo, las versiones actuales (TRDM-v6) y los servicios de adaptación se encuentran centralizados en el repositorio principal:
-  https://github.com/Miguel19x/Basic-Lite-0.2
+  https://github.com/Miguel19x/Basic-Lite-TRACE
 
 Contacto: Miguel Angel Aranguren Ramirez — leohxone@gmail.com
