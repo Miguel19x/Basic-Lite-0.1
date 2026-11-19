@@ -108,7 +108,7 @@ Los experimentos se ejecutaron bajo el protocolo pre-registrado oficial ([Protoc
 | **Validez Sintáctica de Formato** | $61.00\% \pm 21.49\%$ | **$100.00\% \pm 0.00\%$** | **+39.00 pp (Estructura Perfecta)** |
 | **Exactitud Aislada en Dígitos** | $60.50\% \pm 3.10\%$ | **$81.97\% \pm 3.90\%$** | **+21.47 pp** |
 
-*Artefacto oficial de resultados:* [eval_confirmatorio_5semillas_results.json](eval_confirmatorio_5semillas_results.json)
+*Artefacto oficial de resultados:* [results/eval_confirmatorio_5semillas_results.json](results/eval_confirmatorio_5semillas_results.json)
 
 ### 4.2. Desglose de las 5 Semillas Confirmatorias
 
@@ -158,23 +158,28 @@ Basic-Lite TRACE se encuentra en **fase experimental de prueba de concepto (v1.0
 ├── train.py                                  # Pipeline de entrenamiento causal con Staged Warmup
 ├── eval.py                                   # Motor de evaluación causal multivariable en 2 pasos
 ├── requirements.txt                          # Dependencias de entorno fijadas (PyTorch CPU, NumPy)
-├── trace_checkpoint.pt                        # Checkpoint oficial del modelo entrenado
-├── eval_confirmatorio_5semillas_results.json # Registro oficial de la corrida confirmatoria de 5 semillas
+├── trace_checkpoint.pt                        # (Excluido en .gitignore; generable vía 7.2 o Releases)
 ├── paged_gemm_kernel.c                       # Kernel en C para operaciones matriciales Paged BitCOS
-├── LICENSE.txt                               # Licencia Source-Available (Investigación, Docencia y Evaluación)
-├── CONTRIBUTING.md                           # Directrices de colaboración y política de contribuciones
-├── NOTICE.md                                 # Aviso de naturaleza experimental y alcance técnico
+├── LICENSE.txt                               # Licencia Source-Available única (Investigación, Docencia y Evaluación)
+├── CONTRIBUTING.md                           # Directrices de colaboración y equipo núcleo
+├── NOTICE.md                                 # Aviso de alcance técnico y reserva de derechos
 ├── AUTHORS.md                                # Registro de autoría, contribuciones y créditos científicos
 ├── CHANGELOG.md                              # Historial formal de versiones y cambios
 ├── THIRD_PARTY_NOTICES.md                    # Atribuciones y licencias de dependencias externas
 ├── Protocolo pre-registrado — Basic-Lite...  # Protocolo experimental congelado de Fase 1
+├── results/                                  # Registros experimentales confirmatorios pre-registrados
+│   ├── e0_higiene_results.json               # Higiene de medición (E0)
+│   ├── e1_confirmatorio_5semillas_results.json # Evaluación 5 semillas Fase 1 (TRDM-v5)
+│   ├── e2_aislamiento_causal_results.json    # Aislamiento causal (E2)
+│   ├── e4_caracterizacion_nvme_results.json  # Caracterización física NVMe (E4)
+│   └── eval_confirmatorio_5semillas_results.json # Evaluación 5 semillas Fase 2 (TRACE)
 ├── docs/                                     # Documentación técnica, procedencia y criptografía
 │   ├── PROJECT_IDENTITY.md                   # Memoria de identidad técnica y convergencia TRACE
 │   ├── PROVENANCE.md                         # Inventario de procedencia y cadena de custodia
 │   ├── RELEASE_MANIFEST.md                   # Manifiesto criptográfico de hashes SHA-256
 │   ├── AI_ASSISTANCE.md                      # Registro de asistencia por IA y límites metodológicos
 │   └── PAPER_TECNICO_BASIC_LITE.md           # Memoria técnica completa y resultados
-├── trace/                                     # Paquete modular canónico
+├── trace/                                    # Paquete modular canónico
 │   ├── core/
 │   │   ├── context_manager.py                # Gestor de contexto jerárquico (L1 RAM, L2 Latente, L3 SQLite)
 │   │   ├── weight_manager.py                 # Gestor de residencia y caché LRU de expertos
@@ -195,12 +200,7 @@ Basic-Lite TRACE se encuentra en **fase experimental de prueba de concepto (v1.0
 │   │   └── ternary_cpu.py                    # Operaciones ternarias de CPU
 │   └── serialization/
 │       └── paged_bitcos.py                   # Serialización y lectura de páginas Paged BitCOS v1
-├── licenses/                                 # Textos completos de licencias de terceros
-└── archive/                                  # Historial científico y experimentos previos
-    ├── checkpoints_legacy/                   # Modelos y binarios de fases anteriores (v3, v4, v5)
-    ├── experiments_v4_v5/                    # Scripts de diagnóstico y auditorías previas
-    ├── legacy_models/                        # Definiciones de modelos anteriores
-    └── zips/                                 # Paquetes de despliegue archivados
+└── licenses/                                 # Textos completos de licencias de terceros
 ```
 
 ---

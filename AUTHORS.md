@@ -29,9 +29,9 @@ Este documento detalla la autoría, el diseño arquitectónico y las atribucione
 * **Responsable:** Miguel19x
 * **Aportaciones de código:**
   - Módulos del paquete canónico `trace/` (capas, atención MLA, ruteadores MoE paginados, núcleo residente compartido `trace/modules/resident_core.py`, modelo causal `trace/models/causal.py`).
-  - Kernels nativos en C optimizados con SIMD/OpenMP (`paged_gemm_kernel.c` y kernels históricos en `archive/experiments_v4_v5/`).
-  - Pipelines de entrenamiento (`train.py`, conservando en `archive/experiments_v4_v5/` las versiones históricas `train_v5.py` y `train_v6.py`) con currículo *Staged Warmup*.
-  - Generador determinista de datos sintéticos (`data.py`, histórico `data_v2.py`) y motor de evaluación de 2 etapas (`eval.py`, histórico `eval_v6.py`, `eval_composition_audit.py`).
+  - Kernels nativos en C optimizados con SIMD/OpenMP (`paged_gemm_kernel.c` y variantes fundacionales preservadas en las etiquetas Git `v0.1-archive` y `phase2-v6-stable`).
+  - Pipelines de entrenamiento (`train.py` con currículo *Staged Warmup*; versiones históricas preservadas en etiquetas Git).
+  - Generador determinista de datos sintéticos (`data.py`) y motor de evaluación de 2 etapas (`eval.py`), con artefactos de evidencia consolidados en `results/`.
 
 ### 2.3. Metodología de Evaluación y Control de Sesgos
 * **Marco de trabajo:** Protocolo experimental pre-registrado y congelado antes de observar los datos de prueba (`Protocolo pre-registrado — Basic-Lite (TRDM-v5), Fase 1.md`).

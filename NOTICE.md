@@ -18,8 +18,9 @@ El proyecto se presenta con fines de transparencia científica, escrutinio técn
 
 ## 2. Marco de Licencia y Evaluación
 
-* **Investigación, Docencia y Evaluación:** El código y la documentación se ponen a disposición pública para su inspección, clonación, ejecución de benchmarks, investigación y docencia, de conformidad con los términos de [LICENSE.txt](LICENSE.txt).
-* **Reserva Comercial:** Cualquier explotación comercial directa, despliegue masivo en producción o provisión como servicio en la nube (SaaS/API) por parte de terceros requiere un acuerdo previo por escrito con el autor.
+* **Investigación, Docencia y Evaluación:** El código fuente, kernels nativos, artefactos de configuración, pesos y checkpoints se ponen a disposición pública para su inspección, clonación, ejecución de benchmarks, investigación y docencia, de conformidad con los términos de [LICENSE.txt](LICENSE.txt).
+* **Evaluación Técnica Empresarial:** Se autoriza la evaluación técnica interna en infraestructura propia y entorno aislado durante un plazo máximo de treinta (30) días naturales. Transcurrido dicho plazo sin acuerdo comercial escrito con Miguel19x, la organización deberá cesar su uso y eliminar todas las copias.
+* **Reserva Comercial y de Destilación de IA:** Queda expresamente reservada cualquier explotación comercial directa, despliegue masivo en producción, provisión como servicio en la nube (SaaS/API) y el uso del software o sus salidas para entrenamiento, ajuste fino o destilación de modelos de inteligencia artificial comerciales sin un acuerdo previo por escrito con Miguel19x.
 * **Componentes de Terceros:** El proyecto integra bibliotecas estándar de código abierto (PyTorch bajo BSD-3, NumPy bajo BSD-3, SQLite en dominio público). El presente aviso no afecta ni modifica las licencias de dichos componentes (véase `THIRD_PARTY_NOTICES.md`).
 
 ---

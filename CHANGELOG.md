@@ -11,6 +11,10 @@ Todas las modificaciones, versiones y evoluciones arquitectónicas de **Basic-Li
   - Consolidación formal de la arquitectura **TRACE** (*Ternary Resident Architecture for Convergent Execution*), aunando la cuantización ternaria W1.58A8, la residencia selectiva paginada a 4096 bytes en Linux, el ruteo MoE consciente de latencia NVMe y el campo causal en 2 etapas con `detach()`.
   - Transición del proyecto desde su génesis fundacional en **Basic-Lite 0.1** hacia la versión definitiva **Basic-Lite TRACE**, unificando la totalidad de los commits y el historial de desarrollo en el repositorio canónico.
   - Publicación y despliegue del régimen de **Licencia de Investigación, Docencia y Evaluación** en [LICENSE.txt](LICENSE.txt).
+* **Reorganización Modular y Limpieza de Código Legacy:**
+  - Migración y renombrado del paquete modular raíz de Python de `trdm/` a `trace/` para unificar el espacio de nombres con la arquitectura canónica TRACE.
+  - Consolidación de todos los registros de evaluación confirmatoria pre-registrada en el directorio `results/`.
+  - Purgado de código experimental histórico y de la versión fundacional (`archive/` y `legacy/`) del árbol de trabajo principal, quedando íntegramente preservados bajo las etiquetas Git congeladas `v0.1-archive`, `prereg-v1` y `phase2-v6-stable`.
 
 ---
 

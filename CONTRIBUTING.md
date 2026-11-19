@@ -8,8 +8,9 @@ Gracias por tu interés en el proyecto **Basic-Lite TRACE**.
 
 Para preservar la capacidad de mantenimiento, la coherencia técnica del motor y la trazabilidad de los protocolos experimentales, el desarrollo del núcleo se gestiona de forma centralizada:
 
-* **Desarrollo del núcleo:** Actualmente no se incorporan aportaciones externas de código ni de documentación en el repositorio principal.
-* **Canales de participación habilitados:**
+* **Desarrollo del núcleo:** Actualmente no se incorporan aportaciones abiertas por pull request en el repositorio principal para preservar la coherencia técnica y legal.
+* **Incorporación al Equipo Núcleo e Investigación:** El proyecto busca activamente colaboradores técnicos interesados en sumarse al equipo fundador y de investigación (en optimización de kernels C/SIMD/Linux y escalado ML en PyTorch) bajo acuerdos bilaterales formales y coautoría técnica. Si deseas construir sobre esta arquitectura a largo plazo, consulta la Sección 8 de [README.md](README.md) y escribe directamente a `miguelaranguren19x@outlook.com`.
+* **Canales de participación pública:**
   1. **Apertura de Issues:** Notificación de errores de compilación o ejecución, aportando detalles del entorno.
   2. **Discusiones Técnicas:** Consultas conceptuales y contraste de hipótesis.
   3. **Reproducción de Resultados:** Comunicación de resultados independientes obtenidos al replicar los protocolos documentados.

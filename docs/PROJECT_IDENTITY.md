@@ -34,9 +34,9 @@ El proyecto representa una línea de investigación experimental continua sin fr
 
 ### 2.2. Fase de Consolidación y Convergencia: Hacia la Arquitectura TRACE
 * **Protocolo Pre-registrado Congelado:** Redacción del protocolo experimental en Fase 1 ([Protocolo pre-registrado — Basic-Lite (TRDM-v5), Fase 1.md](../Protocolo%20pre-registrado%20%E2%80%94%20Basic-Lite%20(TRDM-v5),%20Fase%201.md)).
-* **Paged BitCOS v1:** Paginación de tensores W1.58 alineada estrictamente a 4096 bytes del kernel Linux ([trdm/serialization/paged_bitcos.py](../trdm/serialization/paged_bitcos.py)) y kernel C fisionado ([paged_gemm_kernel.c](../paged_gemm_kernel.c)).
-* **Enrutamiento MoE Consciente de NVMe:** Ruteo penalizado por latencia de E/S con *buddy routing* ([trdm/modules/paged_moe.py](../trdm/modules/paged_moe.py)).
-* **Campo Causal Desacoplado en 2 Etapas con `detach()`:** Reemplazo de la difusión discreta pura por el campo causal en dos etapas ([trdm/models/causal.py](../trdm/models/causal.py)), resolviendo la multiplicación al $81.88\%$ y rompiendo la nulidad en Full-EM ($5.12\% \pm 4.88\%$).
+* **Paged BitCOS v1:** Paginación de tensores W1.58 alineada estrictamente a 4096 bytes del kernel Linux ([trace/serialization/paged_bitcos.py](../trace/serialization/paged_bitcos.py)) y kernel C fusionado ([paged_gemm_kernel.c](../paged_gemm_kernel.c)).
+* **Enrutamiento MoE Consciente de NVMe:** Ruteo penalizado por latencia de E/S con *buddy routing* ([trace/modules/paged_moe.py](../trace/modules/paged_moe.py)).
+* **Campo Causal Desacoplado en 2 Etapas con `detach()`:** Reemplazo de la difusión discreta pura por el campo causal en dos etapas ([trace/models/causal.py](../trace/models/causal.py)), resolviendo la multiplicación al $81.88\%$ y rompiendo la nulidad en Full-EM ($5.12\% \pm 4.88\%$).
 * **TRACE:** Bautismo formal de la arquitectura convergente unificada: **T**ernary **R**esident **A**rchitecture for **C**onvergent **E**xecution.
 
 ---
@@ -46,14 +46,14 @@ El proyecto representa una línea de investigación experimental continua sin fr
 En la arquitectura convergente de **Basic-Lite TRACE**, el modelo responde plenamente a sus pilares fundacionales de cuantización y recurrencia, con una evolución crítica en el mecanismo de generación:
 
 * **Ternary (Ternario W1.58A8 — Preservado al 100%):**  
-  Todas las proyecciones nucleares operan con pesos $\{-1, 0, 1\}$ mediante [trdm/layers/bitlinear.py](../trdm/layers/bitlinear.py). En runtime, las matrices se evalúan directamente sobre las páginas binarias mapeadas en memoria sin descomprimir a FP32 en RAM.
+  Todas las proyecciones nucleares operan con pesos $\{-1, 0, 1\}$ mediante [trace/layers/bitlinear.py](../trace/layers/bitlinear.py). En runtime, las matrices se evalúan directamente sobre las páginas binarias mapeadas en memoria sin descomprimir a FP32 en RAM.
 
 * **Recursive (Recursividad Dinámica — Preservado y Reforzado):**  
-  El núcleo residente compartido ([trdm/modules/resident_core.py](../trdm/modules/resident_core.py)) no apila capas densas tradicionales, sino que reitera $R$ pasos de recursión sobre un estado latente dual ($z_r$ para razonamiento profundo, $y_r$ para respuesta). Incorpora codificación sinusoidal continua de profundidad $e_r$ y compuerta adaptativa de parada temprana (*adaptive halting gate*).
+  El núcleo residente compartido ([trace/modules/resident_core.py](../trace/modules/resident_core.py)) no apila capas densas tradicionales, sino que reitera $R$ pasos de recursión sobre un estado latente dual ($z_r$ para razonamiento profundo, $y_r$ para respuesta). Incorpora codificación sinusoidal continua de profundidad $e_r$ y compuerta adaptativa de parada temprana (*adaptive halting gate*).
 
 * **Convergent / Causal (Campo Causal Desacoplado en 2 Etapas):**  
   * *Antecedente:* Históricamente se evaluó desruidado por difusión discreta, pero el desenmascaramiento paralelo colapsaba en aritmética composicional ($0.04\% \pm 0.09\%$ Full-EM).
-  * *Mecanismo TRACE:* El mecanismo de generación en producción es el **Campo Causal Desacoplado en 2 Etapas con `detach()`** ([trdm/models/causal.py](../trdm/models/causal.py)). Este desacople resolvió los subtotales multiplicativos al **$81.88\%$** y rompió la barrera de nulidad en Exact Match ($5.12\% \pm 4.88\%$, con pico de $13.33\%$).
+  * *Mecanismo TRACE:* El mecanismo de generación en producción es el **Campo Causal Desacoplado en 2 Etapas con `detach()`** ([trace/models/causal.py](../trace/models/causal.py)). Este desacople resolvió los subtotales multiplicativos al **$81.88\%$** y rompió la barrera de nulidad en Exact Match ($5.12\% \pm 4.88\%$, con pico de $13.33\%$).
 
 ---
 
@@ -61,15 +61,15 @@ En la arquitectura convergente de **Basic-Lite TRACE**, el modelo responde plena
 
 TRACE opera dentro del ecosistema de residencia selectiva a través de **cinco ejes canónicos interdependientes**:
 
-1. **Paged BitCOS v1 ([trdm/serialization/paged_bitcos.py](../trdm/serialization/paged_bitcos.py) y [paged_gemm_kernel.c](../paged_gemm_kernel.c)):**  
+1. **Paged BitCOS v1 ([trace/serialization/paged_bitcos.py](../trace/serialization/paged_bitcos.py) y [paged_gemm_kernel.c](../paged_gemm_kernel.c)):**  
    Paginación de tensores en bloques alineados a 4096 bytes del kernel Linux consumidos vía `mmap`.
-2. **MoE Consciente de Memoria Física ([trdm/modules/paged_moe.py](../trdm/modules/paged_moe.py)):**  
+2. **MoE Consciente de Memoria Física ([trace/modules/paged_moe.py](../trace/modules/paged_moe.py)):**  
    Ruteo dinámico con penalización por I/O físico: $S(e) = U(e) - \lambda C_{\text{lectura}} - \mu C_{\text{cómputo}}$, respaldado por expertos sustitutos (*buddy routing*).
-3. **MLA + Gestor de Contexto en 3 Niveles ([trdm/modules/mla_attention.py](../trdm/modules/mla_attention.py) y [trdm/core/context_manager.py](../trdm/core/context_manager.py)):**  
+3. **MLA + Gestor de Contexto en 3 Niveles ([trace/modules/mla_attention.py](../trace/modules/mla_attention.py) y [trace/core/context_manager.py](../trace/core/context_manager.py)):**  
    Compresión latente de claves y valores (KV 4×–8×) en RAM activa (L1), resúmenes latentes (L2) y almacenamiento estructurado en SQLite sobre disco (L3).
-4. **Hierarchical Byte Patching ($P=4$, [trdm/layers/byte_patcher.py](../trdm/layers/byte_patcher.py)):**  
+4. **Hierarchical Byte Patching ($P=4$, [trace/layers/byte_patcher.py](../trace/layers/byte_patcher.py)):**  
    Reducción cuadrática de $16\times$ del coste de atención sobre secuencias crudas de bytes sin tokenizador rígido.
-5. **Abacus Positional Embeddings + Campo Causal en 2 Etapas ([trdm/layers/abacus.py](../trdm/layers/abacus.py) y [trdm/models/causal.py](../trdm/models/causal.py)):**  
+5. **Abacus Positional Embeddings + Campo Causal en 2 Etapas ([trace/layers/abacus.py](../trace/layers/abacus.py) y [trace/models/causal.py](../trace/models/causal.py)):**  
    Conciencia posicional decimal de derecha a izquierda y corte de gradiente para eliminar el sesgo de exposición (*exposure bias*).
 
 ---

@@ -93,7 +93,7 @@ CONDICIONES GENERALES Y RESERVAS:
 
 * RESERVA DE MARCA Y PATENTES:
   Esta licencia no concede derechos de uso comercial sobre las marcas, nombres comerciales,
-  logotipos o signos distintivos asociados al proyecto («Basic-Lite», «TRACE», «Miguel19x»),
+  logotipos o signos distintivos asociados al proyecto («Basic-Lite», «Basic-Lite TRACE», «Miguel19x»),
   ni confiere ninguna licencia implícita sobre patentes o solicitudes de patente presentes
   o futuras del titular.
 

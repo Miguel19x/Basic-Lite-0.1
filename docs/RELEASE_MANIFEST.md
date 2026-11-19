@@ -26,34 +26,38 @@ Los siguientes hashes han sido generados mediante el algoritmo estándar SHA-256
 
 | Archivo Fuente / Artefacto | Hash Criptográfico SHA-256 |
 | :--- | :--- |
-| `README.md` | `b61865fd2c13b65ef82f28e4b7e624d6c744fd72f0d275c91ab3daa21d6716f9` |
-| `LICENSE.txt` | `2121ac792402c4f36d42ccac81153e6e88a896931ba727d930b4e9bbc0dc9486` |
-| `CONTRIBUTING.md` | `f04a85ecb69bd61d233baaab84302f9a93cf222d661484b526a59a65ae14728a` |
-| `NOTICE.md` | `8556c45b6d8c2e548581954a9af8a47effe4dd27df1ddbc2319a7eb8f54394c4` |
-| `AUTHORS.md` | `8ec16ccf143b177c51d63229fca04d545e1ce5a4414d84fbcc352a228bd383a6` |
-| `CHANGELOG.md` | `02804506ba3cab489e061e6cbb6c215718562f0ccd19f05fd4c68a4b6883a800` |
+| `README.md` | `ed88f0dfa3a2f5c269f9d070167a5f7f374b700ba699a68e9b47d922a46294b1` |
+| `LICENSE.txt` | `7c4d8c21fddee9f087e23349cbeec3d8d513f37aaf54957f5c21ab8dfb3d2609` |
+| `CONTRIBUTING.md` | `ed625c617b50377005202033c3b2d96a1c9e37b886904b029f340ffb206a8ff2` |
+| `NOTICE.md` | `cff498beb420200e7237b98792229f9acdf3b0c5ebe935c7cad51bba5836351b` |
+| `AUTHORS.md` | `2c7a099203dfdc56a25bb1eea549bce129600039d53ce9ff52b3ee24dc39d84c` |
+| `CHANGELOG.md` | `e3f9c1faf99c545f2763e84e99fc5204558f4805e8930ba6aca9b5b3d9f68fbb` |
 | `THIRD_PARTY_NOTICES.md` | `0aa1c14c11e32027a936a366616dafea6139ef02a619d19c861503784fc238c9` |
 | `config.py` | `ce58c08ca9b35b7d1ff6239fbd0aa92c8e728d627d922b2474ca3cd7afacaf1f` |
 | `train.py` | `b3089c25c0db74d77a76976f4beb8b1d0ce5dbfe3525c8ec0315ef7b4871b486` |
 | `eval.py` | `7625cc61c9e685eecb48741f1d65bccfd732c5cbb0fc844700a2652edc39ca1b` |
 | `data.py` | `b569cb139842dc340d40115f974ae4a3c88bf85461a5021e7fd1120912438c91` |
 | `paged_gemm_kernel.c` | `94b3f28a477adbc47d9fa551a140213a3a445e5ca548682aadbc33d98e01e444` |
-| `eval_confirmatorio_5semillas_results.json` | `bf7c8890a1b46dfa7db89d3a6647e1cd64c0f1594d540569f058dad3c1dcc446` |
-| `trdm/__init__.py` | `39720b1af438f835e83f318db535ee7d5e4858a78e2df438b36deb9330f082b8` |
-| `trdm/core/context_manager.py` | `4959c437ef0b9b3a5ce56486ea199989f75444b40d7d6a62f7ca95bab8e8e491` |
-| `trdm/core/weight_manager.py` | `7bc9761e416c6bb02d2e7c75e7020894a5a9eaaefe4f619001a3f465e814c8a1` |
-| `trdm/layers/abacus.py` | `bc6b526527292982b1996ce44120d8f179ee75a9f5e36113deec0336fc25833d` |
-| `trdm/layers/bitlinear.py` | `76094781948d3770157a27434293a3b1620a5ed841a7f41b70b928dce9727e76` |
-| `trdm/layers/byte_patcher.py` | `d25173948d64bfbd33a00fb031e35292a8dbe825763a2d62c9e063c864c95892` |
-| `trdm/models/causal.py` | `14df7eaf2424512eb09b19404562be6070906429681de8a24640775260b995d4` |
-| `trdm/modules/paged_moe.py` | `758a369c6ba2a8c7f97f9a73b0fec2823d737a2b4daf3ae306a3c4ee25c0edec` |
-| `trdm/modules/mla_attention.py` | `cb675fb6e3ecf76ce5901d62df21cc02253feda0703f9e63cee8a7b35ebe41b8` |
-| `trdm/modules/resident_core.py` | `f3a596b7a99de9e005d999525a6ae9dbc5eb1b4896d7b388bfdf84530a9075da` |
-| `trdm/serialization/paged_bitcos.py` | `0f9f1579d0a9edb025dcdc61c5b5eeaa07b3839b2d3f1a01291d0f69c17ef11b` |
-| `docs/PAPER_TECNICO_BASIC_LITE.md` | `b19a8c3b0beb2842a8ea84be320682b0c6c7e9b5e63ff3e9f4b6f234aff12ff2` |
-| `docs/PROJECT_IDENTITY.md` | `807bd05384798460e8a682b22f624d575c48d66346f996df5fc82184d4eceed4` |
+| `results/eval_confirmatorio_5semillas_results.json` | `bf7c8890a1b46dfa7db89d3a6647e1cd64c0f1594d540569f058dad3c1dcc446` |
+| `results/e0_higiene_results.json` | `91c1fc2c55bff3f51dd6632db27f8e537eb9691c8376a5b2d23b42d87b0709dc` |
+| `results/e1_confirmatorio_5semillas_results.json` | `4729c36ee1a0b2bd2505c7d3cf66409b75eb97b63f90291a63d5e7431f9d9d36` |
+| `results/e2_aislamiento_causal_results.json` | `31c8cdbac8ab62ccad849fe2f27d03a6bd0a315792e2ad1e7cd3295e412ae587` |
+| `results/e4_caracterizacion_nvme_results.json` | `cc473e1a22671efe7768ced1d4357ddf40a400bc2a60b399c81c77e94efd87dc` |
+| `trace/__init__.py` | `7885f433847794294d1799bedeb752fb8c41d21fea8f334378878dc7a2bcc71c` |
+| `trace/core/context_manager.py` | `63b4a45827760db192b88a3f4bc71100967d6afd1a50ac93273fb61e2a3329b7` |
+| `trace/core/weight_manager.py` | `7bc9761e416c6bb02d2e7c75e7020894a5a9eaaefe4f619001a3f465e814c8a1` |
+| `trace/layers/abacus.py` | `418e1b1d8335106cce276d50616abf451373805bea844bc5ade4df4f02425959` |
+| `trace/layers/bitlinear.py` | `8e87951fa1763428250306fa0714c40f8f68aa1ae215590eb0f510033cfe20e9` |
+| `trace/layers/byte_patcher.py` | `ec307159e1d89a1f2ffd2fa65051dac2fd5abf483bf078f0dfb71bdbd3533641` |
+| `trace/models/causal.py` | `37a6dd44ff6c8f8954017dd9629a09cda124d0bddab4846c8c0bbfcfe898de2a` |
+| `trace/modules/paged_moe.py` | `15e86f36680d3203ea32251e67d52a2c0d2ecbafac1afc83b055ebe1e22ddd9a` |
+| `trace/modules/mla_attention.py` | `c94eedf5999c6aa13f787d8ae24be8f7bff3ed0b557a61b1c0dbd70e53843c78` |
+| `trace/modules/resident_core.py` | `5ce5835dafeca357995b03342e086674008c47e6e00b995fd6f2583ff514a247` |
+| `trace/serialization/paged_bitcos.py` | `4f3ce2820a0c8c42c0445cdc870502042d3deea6fab3a84b3ff2e0d30070be1c` |
+| `docs/PAPER_TECNICO_BASIC_LITE.md` | `3b26c2353741bb216118099162fff1a077ffc7df9154bf9592b944e3ae90c617` |
+| `docs/PROJECT_IDENTITY.md` | `4cc4138fabd8b8dc9ee85d8006f93b5a0c1ee538500d99ca1626161b79b65bcd` |
 | `docs/AI_ASSISTANCE.md` | `15072cdece67e7830fbe0c0bf61395bbcb5f653e5cdd7be8ddddd4fe729ead28` |
-| `docs/PROVENANCE.md` | `30cb5b2cbb188780a552d70bc702a16d0650e1b4821441aa2e4f6cbd74889ecc` |
+| `docs/PROVENANCE.md` | `fc563b48a81669ae3ba86f8b26d1009877478b58055fcf50184712d5ad12a766` |
 
 ---
 

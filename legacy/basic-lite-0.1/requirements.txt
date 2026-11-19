@@ -1,4 +1,0 @@
-# Entorno CPU para Intel Core i3-1115G4 (Linux)
---extra-index-url https://download.pytorch.org/whl/cpu
-torch>=2.0.0
-numpy>=1.24.0

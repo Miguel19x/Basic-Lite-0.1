@@ -47,9 +47,9 @@ El desarrollo comprende una evolución continua y unificada:
 
 En **Basic-Lite TRACE**, los pilares de la arquitectura son:
 1. **Ternary (Preservado 100%):** Proyecciones nucleares ternarias $\{-1, 0, 1\}$ ejecutadas directamente sobre páginas binarias sin inflar a FP32.
-2. **Resident / Recursive:** Núcleo compartido residente (`trdm/modules/resident_core.py`) que reitera $R$ recursiones sobre un estado latente dual ($z_r, y_r$) con parada adaptativa.
+2. **Resident / Recursive:** Núcleo compartido residente (`trace/modules/resident_core.py`) que reitera $R$ recursiones sobre un estado latente dual ($z_r, y_r$) con parada adaptativa.
 3. **Architecture of Convergence:** Integración sinérgica de Paged BitCOS, MoE consciente de NVMe, compresión de contexto en 3 niveles y Byte Patching ($P=4$).
-4. **Causal Field:** Campo Causal en 2 Etapas (`trdm/models/causal.py`), resolviendo la exactitud de subtotales al $81.88\%$ y el Full-EM al $5.12\% \pm 4.88\%$.
+4. **Causal Field:** Campo Causal en 2 Etapas (`trace/models/causal.py`), resolviendo la exactitud de subtotales al $81.88\%$ y el Full-EM al $5.12\% \pm 4.88\%$.
 5. **Execution:** Motor de inferencia eficiente en CPU sin GPU.
 
 ---
@@ -207,6 +207,6 @@ Para mantener un estándar estricto de honestidad científica, se declaran las s
 
 ## 7. Registro Legal y Reconocimientos
 
-* **Titular Exclusivo de los Derechos de Autor e Invención:** Miguel Angel Aranguren Ramirez (Miguel19x, `leohxone@gmail.com`).
+* **Titular Exclusivo de los Derechos de Autor e Invención:** Miguel19x (`miguelaranguren19x@outlook.com`).
 * **Expediente de Custodia:** Registrado conforme a las directrices de la Organización Mundial de la Propiedad Intelectual (OMPI).
 * **Licencia de Software:** Código y artefactos distribuidos bajo los términos de [LICENSE.txt](../LICENSE.txt).
