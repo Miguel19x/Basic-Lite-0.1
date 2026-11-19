@@ -3,7 +3,7 @@
 **Proyecto:** Basic-Lite TRACE  
 **Versión Documentada:** TRACE 1.0.0 (Consolidación unificada de arquitectura TRACE)  
 **Fecha de corte:** 17 de noviembre de 2026  
-**Titular y Custodio:** Miguel Angel Aranguren Ramirez (Miguel19x, `leohxone@gmail.com`)  
+**Titular y Custodio:** Miguel19x (`miguelaranguren19x@outlook.com`)  
 
 > [!NOTE]
 > Este manifiesto sirve para identificar fehacientemente la composición e integridad de los archivos del paquete en la fecha especificada mediante huellas criptográficas SHA-256. No constituye por sí solo una certificación legal o notarial de prioridad, sino una prueba técnica inmutable de existencia previa e integridad (*prior art / proof of non-alteration*).
@@ -26,13 +26,13 @@ Los siguientes hashes han sido generados mediante el algoritmo estándar SHA-256
 
 | Archivo Fuente / Artefacto | Hash Criptográfico SHA-256 |
 | :--- | :--- |
-| `README.md` | `6fb1fd0f960d27d0467fce2730c8bdb0f2f57c5303f7b7411dd5d8e29b6a9211` |
-| `LICENSE.txt` | `a18f00146344d2a731354a1c6c1e1b43b1484343fda934a1b05e96c455ed8c68` |
+| `README.md` | `b61865fd2c13b65ef82f28e4b7e624d6c744fd72f0d275c91ab3daa21d6716f9` |
+| `LICENSE.txt` | `2121ac792402c4f36d42ccac81153e6e88a896931ba727d930b4e9bbc0dc9486` |
 | `CONTRIBUTING.md` | `f04a85ecb69bd61d233baaab84302f9a93cf222d661484b526a59a65ae14728a` |
-| `NOTICE.md` | `099669a45546a4696c6f912d0974a42d9ab28f76dc535b56c51904b7f4bb550f` |
-| `AUTHORS.md` | `0de798123e10ad9b77c5947572f89f124f8d8e811a7990776ab67dbfd21563d3` |
-| `CHANGELOG.md` | `84d2d2ffc14e59f29b36ad75dc93992c0175cfc3aee036cec7170aa0f759d046` |
-| `THIRD_PARTY_NOTICES.md` | `e44e6224e7fb5a96696c68df730b5fdd6904b30fa685a553f42754abf8211f4e` |
+| `NOTICE.md` | `8556c45b6d8c2e548581954a9af8a47effe4dd27df1ddbc2319a7eb8f54394c4` |
+| `AUTHORS.md` | `8ec16ccf143b177c51d63229fca04d545e1ce5a4414d84fbcc352a228bd383a6` |
+| `CHANGELOG.md` | `02804506ba3cab489e061e6cbb6c215718562f0ccd19f05fd4c68a4b6883a800` |
+| `THIRD_PARTY_NOTICES.md` | `0aa1c14c11e32027a936a366616dafea6139ef02a619d19c861503784fc238c9` |
 | `config.py` | `ce58c08ca9b35b7d1ff6239fbd0aa92c8e728d627d922b2474ca3cd7afacaf1f` |
 | `train.py` | `b3089c25c0db74d77a76976f4beb8b1d0ce5dbfe3525c8ec0315ef7b4871b486` |
 | `eval.py` | `7625cc61c9e685eecb48741f1d65bccfd732c5cbb0fc844700a2652edc39ca1b` |
@@ -50,10 +50,10 @@ Los siguientes hashes han sido generados mediante el algoritmo estándar SHA-256
 | `trdm/modules/mla_attention.py` | `cb675fb6e3ecf76ce5901d62df21cc02253feda0703f9e63cee8a7b35ebe41b8` |
 | `trdm/modules/resident_core.py` | `f3a596b7a99de9e005d999525a6ae9dbc5eb1b4896d7b388bfdf84530a9075da` |
 | `trdm/serialization/paged_bitcos.py` | `0f9f1579d0a9edb025dcdc61c5b5eeaa07b3839b2d3f1a01291d0f69c17ef11b` |
-| `docs/PAPER_TECNICO_BASIC_LITE.md` | `b412d4ebe24141d0d05d214f837efe74e7d45777cf1cc0f2fc6833f545eebf39` |
-| `docs/PROJECT_IDENTITY.md` | `0fdb8c09b716ded7ae0d0e7647db3b3a11fb9e5257552db263f7c8fc9c5ee92a` |
-| `docs/AI_ASSISTANCE.md` | `82ed7f1ee0a0983d5ce4570af24345018e7dd2b772107fb5dac2d327212364f0` |
-| `docs/PROVENANCE.md` | `4b382a987bb5e0ebbf3c2e0f1da6ac6c9170b5ec1d6e3a034e79cdd7e73655b2` |
+| `docs/PAPER_TECNICO_BASIC_LITE.md` | `b19a8c3b0beb2842a8ea84be320682b0c6c7e9b5e63ff3e9f4b6f234aff12ff2` |
+| `docs/PROJECT_IDENTITY.md` | `807bd05384798460e8a682b22f624d575c48d66346f996df5fc82184d4eceed4` |
+| `docs/AI_ASSISTANCE.md` | `15072cdece67e7830fbe0c0bf61395bbcb5f653e5cdd7be8ddddd4fe729ead28` |
+| `docs/PROVENANCE.md` | `30cb5b2cbb188780a552d70bc702a16d0650e1b4821441aa2e4f6cbd74889ecc` |
 
 ---
 

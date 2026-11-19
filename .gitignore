@@ -19,6 +19,9 @@ __pycache__/
 *.zip
 output/
 context_archive.db
+*.db-journal
+*.db-wal
+*.db-shm
 
 # OS specific files
 .DS_Store

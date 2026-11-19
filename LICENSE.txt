@@ -37,13 +37,15 @@ para ejercer exclusivamente los siguientes derechos y bajo las condiciones aquí
 
 4. EVALUACIÓN TÉCNICA EMPRESARIAL (PRUEBA DE CONCEPTO):
    Instalar y ejecutar el software en infraestructura propia de organizaciones comerciales,
-   empleando datos de prueba o datos reales en un entorno aislado, con el fin de evaluar la
-   viabilidad técnica de la tecnología.
+   empleando datos de prueba o datos reales en un entorno aislado, durante un plazo máximo
+   de treinta (30) días naturales desde su primera instalación, con el único fin de evaluar
+   la viabilidad técnica de la tecnología. Transcurrido dicho plazo sin acuerdo comercial
+   escrito con Miguel19x, la organización deberá cesar su uso y eliminar todas las copias.
    LÍMITES OPERATIVOS: Esta autorización permite elaborar informes técnicos internos y valorar
    la adopción o contratación de la tecnología. No permite utilizar los resultados, predicciones
    o procesos del software para atender a clientes, prestar servicios a terceros, integrar el
-   código en cadenas de producción activas ni ejecutar operaciones ordinarias del negocio sin
-   un acuerdo comercial previo.
+   código en cadenas de producción activas, desplegar microservicios internos operativos ni
+   ejecutar operaciones ordinarias del negocio sin un acuerdo comercial previo.
 
 5. ACCESO Y SERVICIOS REMOTOS EN DOCENCIA E INVESTIGACIÓN:
    Habilitar acceso o interfaces remotas al software para el desarrollo de las actividades de
@@ -79,12 +81,28 @@ CONDICIONES GENERALES Y RESERVAS:
   y el uso operativo en el negocio ordinario, requiriéndose en tales casos un acuerdo comercial
   escrito con Miguel19x.
 
-* RESERVA DE MINERÍA DE TEXTOS, DATOS Y ENTRENAMIENTO DE IA:
+* RESERVA DE PESOS, MINERÍA DE DATOS Y ENTRENAMIENTO O DESTILACIÓN DE IA:
+  Las restricciones de esta licencia aplican íntegramente al código fuente, kernels nativos,
+  pesos entrenados, checkpoints y artefactos serializados (incluyendo formatos Paged BitCOS).
   De conformidad con el Artículo 4(3) de la Directiva (UE) 2019/790 y normativas aplicables,
   el titular formula reserva expresa de los derechos de reproducción y extracción para minería
-  de textos, datos y entrenamiento o ajuste de modelos de inteligencia artificial con fines
-  comerciales. Esta reserva no afecta a los usos amparados por excepciones legales imperativas,
-  en particular las relativas a investigación científica institucional.
+  de textos, datos, entrenamiento, ajuste fino (fine-tuning) o destilación de modelos de
+  inteligencia artificial con fines comerciales, así como el uso de las salidas del software
+  para entrenar modelos competidores comerciales. Esta reserva no afecta a los usos amparados
+  por excepciones legales imperativas, en particular la investigación científica institucional.
+
+* RESERVA DE MARCA Y PATENTES:
+  Esta licencia no concede derechos de uso comercial sobre las marcas, nombres comerciales,
+  logotipos o signos distintivos asociados al proyecto («Basic-Lite», «TRACE», «Miguel19x»),
+  ni confiere ninguna licencia implícita sobre patentes o solicitudes de patente presentes
+  o futuras del titular.
+
+* TERMINACIÓN POR INCUMPLIMIENTO:
+  Cualquier ejercicio de derechos, explotación comercial o uso del software en contravención
+  de las condiciones y reservas de esta licencia (incluyendo el paso de evaluación interna a
+  producción sin acuerdo comercial previo) provocará la terminación automática e inmediata
+  de todas las autorizaciones concedidas al infractor, sin perjuicio de las acciones legales
+  y reclamaciones de indemnización que correspondan al titular.
 
 * COMPONENTES DE TERCEROS:
   Las librerías y dependencias externas se rigen por sus respectivas licencias originales,
@@ -123,5 +141,5 @@ LICENCIAMIENTO COMERCIAL Y CONTACTO:
 Para acuerdos comerciales, despliegues en producción o servicios profesionales:
 
 Miguel19x
-Correo electrónico: leohxone@gmail.com
+Correo electrónico: miguelaranguren19x@outlook.com
 Repositorio oficial: https://github.com/Miguel19x/Basic-Lite-TRACE

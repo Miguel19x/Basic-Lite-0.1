@@ -10,7 +10,7 @@ Todas las modificaciones, versiones y evoluciones arquitectónicas de **Basic-Li
 * **Bautismo y Adopción de la Arquitectura TRACE:**
   - Consolidación formal de la arquitectura **TRACE** (*Ternary Resident Architecture for Convergent Execution*), aunando la cuantización ternaria W1.58A8, la residencia selectiva paginada a 4096 bytes en Linux, el ruteo MoE consciente de latencia NVMe y el campo causal en 2 etapas con `detach()`.
   - Transición del proyecto desde su génesis fundacional en **Basic-Lite 0.1** hacia la versión definitiva **Basic-Lite TRACE**, unificando la totalidad de los commits y el historial de desarrollo en el repositorio canónico.
-  - Publicación y despliegue del régimen de **Licencia de Evaluación e Investigación** en [LICENSE.txt](LICENSE.txt).
+  - Publicación y despliegue del régimen de **Licencia de Investigación, Docencia y Evaluación** en [LICENSE.txt](LICENSE.txt).
 
 ---
 
@@ -45,7 +45,7 @@ Todas las modificaciones, versiones y evoluciones arquitectónicas de **Basic-Li
 * **Paged BitCOS v1:**
   - Serialización binaria alineada a 4096 bytes del kernel de Linux con lectura directa vía `mmap` (`trdm/serialization/paged_bitcos.py`).
   - Formatos `fast` (2 bits/peso con LUT) y `compact` (presencia + signo).
-* **Kernel C Fisionado Multi-Página:**
+* **Kernel C Fusionado Multi-Página:**
   - Implementación en `paged_gemm_kernel.c` con vectorización SIMD (AVX2) y paralelismo OpenMP sobre páginas binarias directamente en memoria mapeada.
 * **MoE Consciente de Memoria Física:**
   - Algoritmo de enrutamiento en `trdm/modules/paged_moe.py` con penalización de latencia:

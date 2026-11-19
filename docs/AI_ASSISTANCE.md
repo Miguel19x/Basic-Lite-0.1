@@ -1,7 +1,7 @@
 # Basic-Lite TRACE — Declaración de Asistencia de Inteligencia Artificial (AI_ASSISTANCE)
 
 **Proyecto:** Basic-Lite TRACE (Arquitectura TRACE)  
-**Autor y Director del Proyecto:** Miguel Angel Aranguren Ramirez (Miguel19x)  
+**Autor y Director del Proyecto:** Miguel19x  
 **Fecha:** 17 de noviembre de 2026  
 **Propósito del documento:** Transparencia técnica sobre las herramientas utilizadas en el proceso de desarrollo y delimitación de la autoría humana.
 
@@ -9,7 +9,7 @@
 
 ## 1. Principio de Transparencia y Dirección Humana
 
-El proyecto **Basic-Lite TRACE** fue concebido, estructurado y dirigido por **Miguel Angel Aranguren Ramirez**. 
+El proyecto **Basic-Lite TRACE** fue concebido, estructurado y dirigido por **Miguel19x**. 
 
 Durante las fases de implementación, análisis y redacción, se utilizaron diversos asistentes de inteligencia artificial como **herramientas de apoyo al desarrollo de software** (análogas a linters, autocompletadores avanzados, generadores de esqueletos de código y motores de búsqueda semántica).
 

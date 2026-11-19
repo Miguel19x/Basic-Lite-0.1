@@ -1,7 +1,7 @@
 # Basic-Lite TRACE: Residencia Selectiva de Memoria y Arquitectura Ternaria Convergente para Razonamiento en Hardware de Consumo
 
-**Autor:** Miguel Angel Aranguren Ramirez (Miguel19x)  
-**Contacto:** `leohxone@gmail.com`  
+**Autor:** Miguel19x  
+**Contacto:** `miguelaranguren19x@outlook.com`  
 **Repositorio Oficial:** [Basic-Lite TRACE](https://github.com/Miguel19x/Basic-Lite-TRACE)  
 **Fecha:** Noviembre de 2026  
 **Clasificación Epistémica:** Reporte de Investigación y Especificación de Arquitectura

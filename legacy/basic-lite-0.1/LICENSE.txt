@@ -1,6 +1,6 @@
 Basic-Lite (Versión Fundacional 0.1) — Licencia de Evaluación e Investigación
 
-Copyright © 2026 Miguel Angel Aranguren Ramirez (Miguel19x)
+Copyright © 2026 Miguel19x
 Todos los derechos reservados.
 
 Por la presente se concede permiso gratuito a cualquier persona que obtenga una copia
@@ -16,4 +16,4 @@ CONDICIONES Y RESERVA DE DERECHOS:
 * El desarrollo activo, las versiones actuales (TRDM-v6) y los servicios de adaptación se encuentran centralizados en el repositorio principal:
   https://github.com/Miguel19x/Basic-Lite-TRACE
 
-Contacto: Miguel Angel Aranguren Ramirez — leohxone@gmail.com
+Contacto: Miguel19x — miguelaranguren19x@outlook.com

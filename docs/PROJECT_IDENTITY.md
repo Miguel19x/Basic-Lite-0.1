@@ -3,19 +3,19 @@
 **Proyecto:** Basic-Lite TRACE (Evolución unificada desde el lanzamiento inicial Basic-Lite 0.1)  
 **Arquitectura Canónica:** **TRACE** (*Ternary Resident Architecture for Convergent Execution*)  
 **Linaje Histórico:** Familias TRDM (TRDM-v1 a TRDM-v6) integradas en la arquitectura TRACE  
-**Fundador y Desarrollador Principal:** Miguel Angel Aranguren Ramirez (Seudónimo técnico: Miguel19x)  
-**Contacto oficial:** `leohxone@gmail.com`  
+**Fundador y Desarrollador Principal:** Miguel19x  
+**Contacto oficial:** `miguelaranguren19x@outlook.com`  
 **Repositorio oficial:** [https://github.com/Miguel19x/Basic-Lite-TRACE](https://github.com/Miguel19x/Basic-Lite-TRACE)  
 
 ---
 
 ## 1. La Idea Central y Autoría de la Integración
 
-La concepción, el diseño y la integración de todo este modelo y sistema en una arquitectura única y funcional **proviene íntegramente de Miguel Angel Aranguren Ramirez**.
+La concepción, el diseño y la integración de todo este modelo y sistema en una arquitectura única y funcional **proviene íntegramente de Miguel19x**.
 
 En la computación contemporánea de modelos de lenguaje (>10B - 30B parámetros), existe una barrera de hardware crítica: se requieren decenas de gigabytes de memoria VRAM de alta velocidad en aceleradores GPU/TPU dedicados o clústeres masivos. En un procesador doméstico estándar (**Intel Core i3-1115G4**, 2 núcleos físicos / 4 hilos, 16 GB RAM, SSD NVMe, Linux x86_64 sin GPU), cualquier modelo denso convencional colapsa por agotamiento de memoria (OOM) o sufre degradación severa por intercambio en disco (*swap thrashing*).
 
-Frente a esta limitación, **Miguel Angel Aranguren Ramirez formuló la tesis central de Basic-Lite:**
+Frente a esta limitación, **Miguel19x formuló la tesis central de Basic-Lite:**
 > *¿Es posible desacoplar la capacidad total de almacenamiento de un modelo a gran escala (hasta 30B en disco) de la memoria RAM activa residente mediante residencia selectiva, paginación binaria estricta a nivel de sistema operativo y un ruteo MoE penalizado por la latencia física de acceso a almacenamiento secundario NVMe?*
 
 Para materializar esta visión nació la arquitectura **TRACE** y el sistema **Basic-Lite TRACE**.
@@ -89,4 +89,4 @@ TRACE opera dentro del ecosistema de residencia selectiva a través de **cinco e
 
 * **Investigadores y Académicos:** El código está disponible para estudio, auditoría y contraste empírico bajo los términos de [LICENSE.txt](../LICENSE.txt).
 * **Empresas e Integradores:** Para evaluaciones de viabilidad en hardware local o adaptaciones con soporte directo del autor:  
-  **Miguel Angel Aranguren Ramirez** — `leohxone@gmail.com`
+  **Miguel19x** — `miguelaranguren19x@outlook.com`

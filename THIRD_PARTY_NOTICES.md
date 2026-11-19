@@ -1,4 +1,4 @@
-# Basic-Lite — Avisos de Componentes de Terceros (Third Party Notices)
+# Basic-Lite TRACE — Avisos de Componentes de Terceros (Third Party Notices)
 
 Este proyecto hace uso de librerías y componentes de software de código abierto bajo sus respectivas licencias. Este documento compila las atribuciones y términos exigidos por dichas licencias de conformidad con los estándares de buenas prácticas de la OMPI.
 
@@ -29,4 +29,4 @@ Los textos completos de las licencias de código abierto se conservan íntegrame
 ## 3. Declaración de Independencia y No Afectación
 
 * Los componentes de terceros se rigen estrictamente por sus términos de distribución originales.
-* El aviso de reserva de derechos y protección legal de **Basic-Lite** contenido en `LICENSE.txt` y `NOTICE.md` aplica **únicamente** a los módulos, algoritmos, kernels y arquitecturas de autoría original desarrollados por Miguel19x, y no pretende en modo alguno atribuirse titularidad sobre librerías o sistemas operativos de terceros.
+* El aviso de reserva de derechos y protección legal de **Basic-Lite TRACE** contenido en `LICENSE.txt` y `NOTICE.md` aplica **únicamente** a los módulos, algoritmos, kernels y arquitecturas de autoría original desarrollados por Miguel19x, y no pretende en modo alguno atribuirse titularidad sobre librerías o sistemas operativos de terceros.

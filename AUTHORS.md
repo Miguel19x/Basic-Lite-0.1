@@ -6,9 +6,8 @@ Este documento detalla la autoría, el diseño arquitectónico y las atribucione
 
 ## 1. Fundador y Responsable Técnico
 
-* **Autor y Director del Proyecto:** **Miguel Angel Aranguren Ramirez**
-  * **Seudónimo técnico / cuenta:** **Miguel19x**
-  * **Contacto:** `leohxone@gmail.com`
+* **Autor y Director del Proyecto:** **Miguel19x**
+  * **Contacto:** `miguelaranguren19x@outlook.com`
   * **Función:** Creador único e inventor de la arquitectura. Concibió la idea unificada de integrar todo este modelo y sistema en una arquitectura coherente, dirigiendo la evolución completa desde la fundación inicial en **Basic-Lite 0.1** (familias TRDM-v1 a v4) hasta la consolidación definitiva en **Basic-Lite TRACE** (arquitectura **TRACE**). Es el responsable de la formulación matemática de los mecanismos, la programación de módulos y kernels, el diseño del protocolo experimental y la dirección técnica de la investigación.
 
 ---
@@ -16,7 +15,7 @@ Este documento detalla la autoría, el diseño arquitectónico y las atribucione
 ## 2. Desglose de Contribuciones Técnicas
 
 ### 2.1. Concepción Arquitectónica y Diseño
-* **Responsable:** Miguel Angel Aranguren Ramirez
+* **Responsable:** Miguel19x
 * **Aportaciones clave:**
   - Creación y formulación de la arquitectura **TRACE** (*Ternary Resident Architecture for Convergent Execution*, nacida del linaje TRDM), concibiendo la unificación del cómputo ternario W1.58A8, la residencia selectiva paginada, la recurrencia dinámica en estados latentes y el campo causal desacoplado en 2 etapas.
   - Formulación de la hipótesis de **residencia y ejecución selectivas** (desacoplar la capacidad total en disco de 30B de la memoria RAM activa en procesadores de consumo básico).
@@ -27,10 +26,10 @@ Este documento detalla la autoría, el diseño arquitectónico y las atribucione
   - Integración de *Abacus Positional Embeddings* con empaquetamiento jerárquico de bytes ($P=4$).
 
 ### 2.2. Programación e Implementación
-* **Responsable:** Miguel Angel Aranguren Ramirez
+* **Responsable:** Miguel19x
 * **Aportaciones de código:**
-  - Módulos del paquete `trdm/` (capas, atención MLA, ruteadores MoE paginados, núcleo residente compartido `trdm/modules/resident_core.py`, modelo causal `trdm/models/causal.py`).
-  - Kernels nativos en C optimizados con SIMD/OpenMP (`paged_gemm_kernel.c`, `ternary_kernel.c`, `trdm/ops/csrc/ternary_kernel.c`).
+  - Módulos del paquete canónico `trace/` (capas, atención MLA, ruteadores MoE paginados, núcleo residente compartido `trace/modules/resident_core.py`, modelo causal `trace/models/causal.py`).
+  - Kernels nativos en C optimizados con SIMD/OpenMP (`paged_gemm_kernel.c` y kernels históricos en `archive/experiments_v4_v5/`).
   - Pipelines de entrenamiento (`train.py`, conservando en `archive/experiments_v4_v5/` las versiones históricas `train_v5.py` y `train_v6.py`) con currículo *Staged Warmup*.
   - Generador determinista de datos sintéticos (`data.py`, histórico `data_v2.py`) y motor de evaluación de 2 etapas (`eval.py`, histórico `eval_v6.py`, `eval_composition_audit.py`).
 
@@ -54,3 +53,4 @@ El proyecto se apoya con gratitud en las siguientes bibliotecas de código abier
   - **Multi-Head Latent Attention (MLA, DeepSeek-AI):** Concepto de compresión de claves y valores (KV) en un espacio latente conjunto.
   - **RoPE (Su et al.):** Incrustación posicional rotatoria.
   - **RMSNorm (Zhang & Sennrich):** Normalización de raíz cuadrada media.
+  - **Abacus Embeddings (McLeish et al., 2024):** Formulación de incrustaciones de dígitos con alineación decimal recursiva («Transformers Can Do Arithmetic with the Right Embeddings»).
