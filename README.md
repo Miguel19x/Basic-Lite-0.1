@@ -4,6 +4,7 @@
 ![Platform](https://img.shields.io/badge/platform-Linux%20x86__64-blue)
 ![Precision](https://img.shields.io/badge/precision-W1.58A8-brightgreen)
 ![License](https://img.shields.io/badge/license-Source--Available-red)
+[![Basic-Lite TRACE CI](https://github.com/Miguel19x/Basic-Lite-TRACE/actions/workflows/ci.yml/badge.svg)](https://github.com/Miguel19x/Basic-Lite-TRACE/actions/workflows/ci.yml)
 
 **Basic-Lite TRACE** (*Ternary Resident Architecture for Convergent Execution*) es una arquitectura neuronal y un motor de inferencia de ultra-baja precisión (**W1.58A8**) creado y dirigido por **Miguel19x**. Su objetivo arquitectónico es viabilizar modelos de escala masiva (diseñados para escalar hasta **30B parámetros**) sobre hardware estándar de consumo (**Intel Core i3-1115G4**, 2 núcleos / 4 hilos, 16 GB RAM, SSD NVMe, Linux x86_64), sin GPU dedicada y sin descomprimir matrices completas a FP32 en RAM.
 
@@ -153,6 +154,9 @@ Basic-Lite TRACE se encuentra en **fase experimental de prueba de concepto (v1.0
 
 ```
 .
+├── .github/                                  # Automatización e integración continua
+│   └── workflows/
+│       └── ci.yml                            # Pipeline de CI en GitHub Actions (Ubuntu)
 ├── config.py                                 # Configuración unificada de hiperparámetros
 ├── data.py                                   # Generador procedural de datos y particiones científicas
 ├── train.py                                  # Pipeline de entrenamiento causal con Staged Warmup
@@ -160,11 +164,13 @@ Basic-Lite TRACE se encuentra en **fase experimental de prueba de concepto (v1.0
 ├── requirements.txt                          # Dependencias de entorno fijadas (PyTorch CPU, NumPy)
 ├── trace_checkpoint.pt                        # (Excluido en .gitignore; generable vía 7.2 o Releases)
 ├── paged_gemm_kernel.c                       # Kernel en C para operaciones matriciales Paged BitCOS
+├── Makefile                                  # Automatización de compilación de kernel C y pruebas
 ├── LICENSE.txt                               # Licencia Source-Available única (Investigación, Docencia y Evaluación)
 ├── CONTRIBUTING.md                           # Directrices de colaboración y equipo núcleo
 ├── NOTICE.md                                 # Aviso de alcance técnico y reserva de derechos
 ├── AUTHORS.md                                # Registro de autoría, contribuciones y créditos científicos
 ├── CHANGELOG.md                              # Historial formal de versiones y cambios
+├── SECURITY.md                               # Política de divulgación responsable de vulnerabilidades
 ├── THIRD_PARTY_NOTICES.md                    # Atribuciones y licencias de dependencias externas
 ├── Protocolo pre-registrado — Basic-Lite...  # Protocolo experimental congelado de Fase 1
 ├── results/                                  # Registros experimentales confirmatorios pre-registrados
@@ -179,6 +185,8 @@ Basic-Lite TRACE se encuentra en **fase experimental de prueba de concepto (v1.0
 │   ├── RELEASE_MANIFEST.md                   # Manifiesto criptográfico de hashes SHA-256
 │   ├── AI_ASSISTANCE.md                      # Registro de asistencia por IA y límites metodológicos
 │   └── PAPER_TECNICO_BASIC_LITE.md           # Memoria técnica completa y resultados
+├── tests/                                    # Pruebas automatizadas y tests de humo
+│   └── test_smoke.py                         # Test de humo para kernel C y forward pass causal
 ├── trace/                                    # Paquete modular canónico
 │   ├── core/
 │   │   ├── context_manager.py                # Gestor de contexto jerárquico (L1 RAM, L2 Latente, L3 SQLite)
@@ -217,7 +225,12 @@ source venv/bin/activate
 pip install -r requirements.txt
 
 # 3. Compilar el kernel C fusionado nativo (requiere GCC con OpenMP y AVX2)
-gcc -O3 -march=native -fopenmp -shared -fPIC paged_gemm_kernel.c -o libpaged_gemm.so
+make
+# O alternativamente vía gcc directo:
+# gcc -O3 -march=native -fopenmp -shared -fPIC paged_gemm_kernel.c -o libpaged_gemm.so
+
+# 4. (Opcional) Ejecutar suite de pruebas de humo
+make test
 ```
 
 ### 7.2. Ejecución Local en CPU (Intel Core i3)
