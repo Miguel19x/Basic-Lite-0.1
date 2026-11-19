@@ -8,16 +8,16 @@ from typing import Dict, Any, List, Tuple
 import torch
 from config import HybridConfig
 from data import ProceduralCompositionalDataset, parse_fixed_scratchpad
-from trdm.models.causal import TRDMCausalModel
+from trace.models.causal import TRACECausalModel
 
 
 def evaluate_causal(
-    model: TRDMCausalModel,
+    model: TRACECausalModel,
     dataset: ProceduralCompositionalDataset,
     device: torch.device,
 ) -> Dict[str, Any]:
     """
-    Evaluación rigurosa del modelo TRDM Causal (Basic-Lite 0.2) bajo inferencia de 2 pasos.
+    Evaluación rigurosa del modelo TRACE Causal (Basic-Lite TRACE) bajo inferencia de 2 pasos.
     Calcula Exact Match Total, Scratchpad EM, Final EM, Exactitud de Dígitos,
     Validez de Formato y Latencia.
     """
@@ -100,7 +100,3 @@ def evaluate_causal(
         "em_count": em_total_count,
         "total_cases": total_cases,
     }
-
-
-# Alias de compatibilidad
-evaluate_causal_v6 = evaluate_causal

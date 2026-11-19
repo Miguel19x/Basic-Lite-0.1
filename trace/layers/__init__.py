@@ -3,11 +3,11 @@
 # Todos los derechos reservados.
 # Véanse LICENSE.txt y THIRD_PARTY_NOTICES.md.
 
-from trdm.layers.norm import RMSNorm
-from trdm.layers.rotary import RotaryEmbedding
-from trdm.layers.embeddings import SinusoidalStepEncoding
-from trdm.layers.bitlinear import BitLinear
-from trdm.layers.abacus import AbacusEmbedding, extract_abacus_ranks
+from trace.layers.norm import RMSNorm
+from trace.layers.rotary import RotaryEmbedding
+from trace.layers.embeddings import SinusoidalStepEncoding
+from trace.layers.bitlinear import BitLinear
+from trace.layers.abacus import AbacusEmbedding, extract_abacus_ranks
 
 __all__ = [
     "RMSNorm",

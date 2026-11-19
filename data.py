@@ -218,7 +218,3 @@ def parse_fixed_scratchpad(text: str) -> Tuple[bool, Optional[int], Optional[int
             pass
     return False, None, None, None, None
 
-
-# Alias de compatibilidad
-ProceduralCompositionalDatasetV2 = ProceduralCompositionalDataset
-

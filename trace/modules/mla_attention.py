@@ -8,10 +8,10 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from trdm.layers.bitlinear import BitLinear
-from trdm.layers.norm import RMSNorm
-from trdm.layers.rotary import RotaryEmbedding
-from trdm.modules.attention import build_block_causal_mask
+from trace.layers.bitlinear import BitLinear
+from trace.layers.norm import RMSNorm
+from trace.layers.rotary import RotaryEmbedding
+from trace.modules.attention import build_block_causal_mask
 
 
 class MultiHeadLatentAttention(nn.Module):

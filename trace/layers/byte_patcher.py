@@ -8,7 +8,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from trdm.layers.norm import RMSNorm
+from trace.layers.norm import RMSNorm
 
 
 class HierarchicalBytePatcher(nn.Module):

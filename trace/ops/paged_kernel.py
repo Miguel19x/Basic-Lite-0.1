@@ -94,7 +94,7 @@ def benchmark_packed_vs_dense(
     Responde a la pregunta 1 del auditor:
     «¿El resultado coincide y cuánto cuesta ejecutarla sin expansión completa?»
     """
-    from trdm.serialization.paged_bitcos import PagedBitCOSSerializer
+    from trace.serialization.paged_bitcos import PagedBitCOSSerializer
 
     # Generar pesos ternarios sintéticos {-1, 0, +1}
     torch.manual_seed(42)
@@ -192,7 +192,7 @@ def verify_integer_accumulators_exact_equality(
     entre la referencia y las rutas empaquetadas (Compact y Fast).
     Demuestra si existe igualdad matemática exacta (diff == 0).
     """
-    from trdm.serialization.paged_bitcos import PagedBitCOSSerializer
+    from trace.serialization.paged_bitcos import PagedBitCOSSerializer
 
     torch.manual_seed(2026)
     w_ref = torch.randint(-1, 2, (out_features, in_features), dtype=torch.int8)
@@ -252,7 +252,7 @@ def benchmark_against_resident_fp32_timer(
     3. Ejecución Paginada Directa en Formato Compact.
     """
     import torch.utils.benchmark as benchmark
-    from trdm.serialization.paged_bitcos import PagedBitCOSSerializer
+    from trace.serialization.paged_bitcos import PagedBitCOSSerializer
 
     torch.set_num_threads(num_threads)
     torch.manual_seed(42)

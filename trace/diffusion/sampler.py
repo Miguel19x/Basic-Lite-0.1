@@ -9,7 +9,7 @@ from typing import Dict, List, Optional, Tuple
 import torch
 import torch.nn.functional as F
 
-from trdm.data.parsers import parse_scratchpad_prediction
+from trace.data.parsers import parse_scratchpad_prediction
 
 
 @torch.no_grad()

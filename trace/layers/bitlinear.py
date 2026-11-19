@@ -10,9 +10,9 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from trdm.layers.norm import RMSNorm
-from trdm.ops.ternary_cpu import ternary_addsub_matmul
-from trdm.serialization.bitcos import pack_bitlinear_layer, unpack_bitlinear_layer
+from trace.layers.norm import RMSNorm
+from trace.ops.ternary_cpu import ternary_addsub_matmul
+from trace.serialization.bitcos import pack_bitlinear_layer, unpack_bitlinear_layer
 
 
 class BitLinear(nn.Module):

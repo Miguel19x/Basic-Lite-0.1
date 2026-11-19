@@ -3,9 +3,8 @@
 # Todos los derechos reservados.
 # Véanse LICENSE.txt y THIRD_PARTY_NOTICES.md.
 
-from trdm.models.causal import TRDMCausalModel, TRDMv6CausalModel
+from trace.models.causal import TRACECausalModel
 
 __all__ = [
-    "TRDMCausalModel",
-    "TRDMv6CausalModel",
+    "TRACECausalModel",
 ]

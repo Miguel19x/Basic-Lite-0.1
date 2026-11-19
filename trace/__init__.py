@@ -3,24 +3,24 @@
 # Todos los derechos reservados.
 # Véanse LICENSE.txt y THIRD_PARTY_NOTICES.md.
 
-from trdm.core.types import ModelOutput
-from trdm.core.weight_manager import WeightMovementManager
-from trdm.core.context_manager import HierarchicalContextManager
-from trdm.layers.norm import RMSNorm
-from trdm.layers.rotary import RotaryEmbedding
-from trdm.layers.embeddings import SinusoidalStepEncoding
-from trdm.layers.bitlinear import BitLinear
-from trdm.layers.byte_patcher import HierarchicalBytePatcher
-from trdm.layers.abacus import AbacusEmbedding
-from trdm.modules.attention import BlockCausalGQATernaryAttention, build_block_causal_mask
-from trdm.modules.mla_attention import MultiHeadLatentAttention
-from trdm.modules.moe import TernaryExpert, ExpertChoiceMoE
-from trdm.modules.paged_moe import MemoryAwarePagedMoE
-from trdm.modules.recursive_core import SharedDualStateRecursiveCore
-from trdm.modules.resident_core import SharedResidentTernaryCore
-from trdm.models.causal import TRDMCausalModel
-from trdm.serialization.bitcos import export_bitcos_archive, load_bitcos_archive
-from trdm.serialization.paged_bitcos import PagedBitCOSSerializer, PagedBitCOSReader
+from trace.core.types import ModelOutput
+from trace.core.weight_manager import WeightMovementManager
+from trace.core.context_manager import HierarchicalContextManager
+from trace.layers.norm import RMSNorm
+from trace.layers.rotary import RotaryEmbedding
+from trace.layers.embeddings import SinusoidalStepEncoding
+from trace.layers.bitlinear import BitLinear
+from trace.layers.byte_patcher import HierarchicalBytePatcher
+from trace.layers.abacus import AbacusEmbedding
+from trace.modules.attention import BlockCausalGQATernaryAttention, build_block_causal_mask
+from trace.modules.mla_attention import MultiHeadLatentAttention
+from trace.modules.moe import TernaryExpert, ExpertChoiceMoE
+from trace.modules.paged_moe import MemoryAwarePagedMoE
+from trace.modules.recursive_core import SharedDualStateRecursiveCore
+from trace.modules.resident_core import SharedResidentTernaryCore
+from trace.models.causal import TRACECausalModel
+from trace.serialization.bitcos import export_bitcos_archive, load_bitcos_archive
+from trace.serialization.paged_bitcos import PagedBitCOSSerializer, PagedBitCOSReader
 
 __all__ = [
     "ModelOutput",
@@ -40,7 +40,7 @@ __all__ = [
     "MemoryAwarePagedMoE",
     "SharedDualStateRecursiveCore",
     "SharedResidentTernaryCore",
-    "TRDMCausalModel",
+    "TRACECausalModel",
     "export_bitcos_archive",
     "load_bitcos_archive",
     "PagedBitCOSSerializer",

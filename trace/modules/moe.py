@@ -8,7 +8,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from trdm.layers.bitlinear import BitLinear
+from trace.layers.bitlinear import BitLinear
 
 
 class TernaryExpert(nn.Module):

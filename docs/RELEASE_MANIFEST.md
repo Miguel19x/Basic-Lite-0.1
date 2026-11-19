@@ -33,10 +33,10 @@ Los siguientes hashes han sido generados mediante el algoritmo estándar SHA-256
 | `AUTHORS.md` | `2c7a099203dfdc56a25bb1eea549bce129600039d53ce9ff52b3ee24dc39d84c` |
 | `CHANGELOG.md` | `e3f9c1faf99c545f2763e84e99fc5204558f4805e8930ba6aca9b5b3d9f68fbb` |
 | `THIRD_PARTY_NOTICES.md` | `0aa1c14c11e32027a936a366616dafea6139ef02a619d19c861503784fc238c9` |
-| `config.py` | `ce58c08ca9b35b7d1ff6239fbd0aa92c8e728d627d922b2474ca3cd7afacaf1f` |
-| `train.py` | `b3089c25c0db74d77a76976f4beb8b1d0ce5dbfe3525c8ec0315ef7b4871b486` |
-| `eval.py` | `7625cc61c9e685eecb48741f1d65bccfd732c5cbb0fc844700a2652edc39ca1b` |
-| `data.py` | `b569cb139842dc340d40115f974ae4a3c88bf85461a5021e7fd1120912438c91` |
+| `config.py` | `19c3ded4a7ea7e5fec5e30a4a966b012afe6ca64eec94d247609280e5905605c` |
+| `train.py` | `66dd422336b4a7b08fedc4892942b6835866ff910d7671a547355b989abb62e3` |
+| `eval.py` | `574c69a97503d3e0168201131040e2d58c95629bfacee77fab0482190107bb0f` |
+| `data.py` | `4595ede5b60495ac58a31dd0700d6dc6b10c4c382b8fca36ae11eba810f7ab42` |
 | `paged_gemm_kernel.c` | `94b3f28a477adbc47d9fa551a140213a3a445e5ca548682aadbc33d98e01e444` |
 | `results/eval_confirmatorio_5semillas_results.json` | `bf7c8890a1b46dfa7db89d3a6647e1cd64c0f1594d540569f058dad3c1dcc446` |
 | `results/e0_higiene_results.json` | `91c1fc2c55bff3f51dd6632db27f8e537eb9691c8376a5b2d23b42d87b0709dc` |

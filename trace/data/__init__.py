@@ -3,7 +3,7 @@
 # Todos los derechos reservados.
 # Véanse LICENSE.txt y THIRD_PARTY_NOTICES.md.
 
-from trdm.data.parsers import (
+from trace.data.parsers import (
     parse_watt_ms_prediction,
     parse_scratchpad_prediction,
 )

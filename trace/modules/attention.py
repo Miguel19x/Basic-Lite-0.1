@@ -8,9 +8,9 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from trdm.layers.norm import RMSNorm
-from trdm.layers.rotary import RotaryEmbedding
-from trdm.layers.bitlinear import BitLinear
+from trace.layers.norm import RMSNorm
+from trace.layers.rotary import RotaryEmbedding
+from trace.layers.bitlinear import BitLinear
 
 
 def build_block_causal_mask(seq_len: int, block_size: int, device: torch.device) -> torch.Tensor:

@@ -3,7 +3,7 @@
 # Todos los derechos reservados.
 # Véanse LICENSE.txt y THIRD_PARTY_NOTICES.md.
 
-from trdm.serialization.bitcos import (
+from trace.serialization.bitcos import (
     pack_bitlinear_layer,
     unpack_bitlinear_layer,
     export_bitcos_archive,

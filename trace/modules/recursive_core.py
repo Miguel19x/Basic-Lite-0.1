@@ -8,11 +8,11 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from trdm.layers.norm import RMSNorm
-from trdm.layers.embeddings import SinusoidalStepEncoding
-from trdm.layers.bitlinear import BitLinear
-from trdm.modules.attention import BlockCausalGQATernaryAttention
-from trdm.modules.moe import ExpertChoiceMoE
+from trace.layers.norm import RMSNorm
+from trace.layers.embeddings import SinusoidalStepEncoding
+from trace.layers.bitlinear import BitLinear
+from trace.modules.attention import BlockCausalGQATernaryAttention
+from trace.modules.moe import ExpertChoiceMoE
 
 
 class SharedDualStateRecursiveCore(nn.Module):

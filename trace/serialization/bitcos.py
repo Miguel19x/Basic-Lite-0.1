@@ -71,7 +71,7 @@ def unpack_bitlinear_layer(
 
 def export_bitcos_archive(model: nn.Module, path: str) -> int:
     """Exporta todas las capas ternarias de un modelo al archivo binario BITCOSv2."""
-    from trdm.layers.bitlinear import BitLinear
+    from trace.layers.bitlinear import BitLinear
 
     chunks = []
     for name, module in model.named_modules():
@@ -87,7 +87,7 @@ def export_bitcos_archive(model: nn.Module, path: str) -> int:
 
 def load_bitcos_archive(model: nn.Module, path: str) -> int:
     """Carga pesos ternarios desde un archivo BITCOSv2 hacia las capas BitLinear del modelo."""
-    from trdm.layers.bitlinear import BitLinear
+    from trace.layers.bitlinear import BitLinear
 
     with open(path, "rb") as f:
         blob = f.read()

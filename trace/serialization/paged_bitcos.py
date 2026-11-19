@@ -12,7 +12,7 @@ import numpy as np
 import torch
 import torch.nn as nn
 
-from trdm.layers.bitlinear import BitLinear
+from trace.layers.bitlinear import BitLinear
 
 
 # Magic identificador para el formato de ejecución por páginas (Paged BitCOS v1)
@@ -313,8 +313,8 @@ class PagedBitCOSReader:
         Carga íntegramente los parámetros residentes y las páginas ternarias
         desde el archivo Paged BitCOS hacia una instancia de modelo vacía/limpia.
         """
-        from trdm.layers.bitlinear import BitLinear
-        from trdm.ops.paged_kernel import unpack_page_to_dense
+        from trace.layers.bitlinear import BitLinear
+        from trace.ops.paged_kernel import unpack_page_to_dense
 
         # 1. Cargar tensores residentes (embeddings, normas, MLPs de ruido)
         loaded_resident = 0
