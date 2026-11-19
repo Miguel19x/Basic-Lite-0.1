@@ -35,7 +35,7 @@ Durante las fases de implementación, análisis y redacción, se utilizaron dive
 * Generación de plantillas sintácticas de clases en Python y funciones auxiliares de parseo de texto.
 * Resúmenes comparativos de literatura pública sobre modelos de lenguaje y directrices legales.
 
-### 3.2. Lo que Diseñó, Decidió y Validó Miguel Angel Aranguren Ramirez
+### 3.2. Lo que Diseñó, Decidió y Validó Miguel19x
 * **La Hipótesis Central:** La idea original de desacoplar capacidad en disco y memoria RAM mediante residencia selectiva para hardware de consumo básico (CPU Intel Core i3-1115G4).
 * **Las Decisiones Arquitectónicas:** La formulación matemática de la función de ruteo MoE con penalización por I/O físico ($S(e) = U(e) - \lambda C_{\text{lectura}} - \mu C_{\text{cómputo}}$), el diseño del campo causal en 2 etapas con `detach()`, y la integración de *Abacus Embeddings*.
 * **El Control Experimental:** La redacción y aprobación del protocolo pre-registrado congelado, la selección de hiperparámetros y la exigencia de evaluar 5 semillas independientes sin inflar métricas con plantillas estáticas.

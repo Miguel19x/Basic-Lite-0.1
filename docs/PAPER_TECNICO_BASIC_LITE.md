@@ -39,7 +39,7 @@ En un procesador de consumo como el **Intel Core i3-1115G4** (2 núcleos físico
 Basic-Lite formula la hipótesis de que es posible desacoplar la **capacidad paramétrica total** (almacenada en disco secundario NVMe en formatos ternarios empaquetados W1.58) de la **huella de memoria de trabajo residente en RAM**, manteniendo activos únicamente los módulos estrictamente requeridos para cada cálculo puntual, respaldados por una dinámica causal en dos fases que descompone el razonamiento numérico.
 
 ### 1.3. Linaje Evolutivo y la Arquitectura TRACE
-La idea de concebir e integrar todos los componentes de esta arquitectura en un sistema funcional único proviene íntegramente de **Miguel Angel Aranguren Ramirez**, consolidada formalmente bajo el nombre de arquitectura **TRACE** (*Ternary Resident Architecture for Convergent Execution*).
+La idea de concebir e integrar todos los componentes de esta arquitectura en un sistema funcional único proviene íntegramente de **Miguel19x**, consolidada formalmente bajo el nombre de arquitectura **TRACE** (*Ternary Resident Architecture for Convergent Execution*).
 
 El desarrollo comprende una evolución continua y unificada:
 * **Fase Inicial (Basic-Lite 0.1, TRDM-v1 a v4):** Introdujo la cuantización ternaria W1.58A8 con Straight-Through Estimator, los primeros kernels C SIMD sin multiplicadores (`ternary_kernel.c`) y la exploración inicial de desruidado discreto por bloques.
